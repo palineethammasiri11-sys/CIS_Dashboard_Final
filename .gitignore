@@ -1,7 +1,6 @@
 __pycache__/
 *.pyc
 .venv/
-cis_database_backup.db
-walk_forward_*.csv
-model_comparison*.csv
-sensitivity*.csv
+*_backup.db
+_run_tests_preview_tmp.py
+# หมายเหตุ: ห้าม ignore *.db หรือ Dataset/*.csv — แอปบน Streamlit Cloud ต้องใช้
