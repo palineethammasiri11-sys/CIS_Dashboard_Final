@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+cis_database_backup.db
+walk_forward_*.csv
+model_comparison*.csv
+sensitivity*.csv
