@@ -31,6 +31,7 @@ import json
 from datetime import datetime
 import pandas as pd
 from sqlalchemy import create_engine
+from import_data import write_table  # [v17.3] ลบตารางเดิมก่อนเขียน (กัน error "table already exists")
 
 from calculate_modules.common import clean_float, SECTOR_MAP
 from calculate_modules import (
@@ -47,7 +48,7 @@ DB_NAME = "cis_database.db"
 # [FIX-S4] เวอร์ชันของสูตรคำนวณ — บันทึกลง DB ทุกแถว (คอลัมน์ calc_version)
 # common.py (ฝั่ง UI) จะเทียบค่านี้กับใน DB ถ้าไม่ตรง = DB เก่า → คำนวณใหม่อัตโนมัติตอนเปิดแอป
 # ⚠️ ทุกครั้งที่แก้สูตรใน calculate_modules/ ให้เปลี่ยนเลขนี้ (เช่น เพิ่มวันที่) ไม่งั้นเว็บที่ deploy จะยังใช้ตัวเลขเก่า
-CALC_VERSION = "2026-10-09-v17.2"
+CALC_VERSION = "2026-10-10-v17.3"
 TARGET_STOCKS = ["ADVANC", "CCET", "DELTA", "HANA", "JMART", "KCE", "THCOM", "TRUE"]
 
 
@@ -83,7 +84,7 @@ def load_data_from_db(engine):
 
 
 def run_full_pipeline():
-    engine = create_engine(f"sqlite:///{DB_NAME}")
+    engine = create_engine(f"sqlite:///{DB_NAME}", connect_args={"timeout": 60})
     df_fin_all, df_price_all, df_risk_all, df_params_all = load_data_from_db(engine)
     # [v17.2] ค่าปีล่าสุดใช้กับการประเมินปัจจุบัน / ค่ารายปีใช้กับกราฟย้อนหลัง (ไม่เอาค่าปีหลังไปใช้กับปีก่อน)
     if 'fiscal_year' not in df_params_all.columns:
@@ -228,30 +229,32 @@ def run_full_pipeline():
         )
 
     # ===== บันทึกผลลัพธ์ทั้งหมดลงฐานข้อมูล =====
-    df_res.to_sql("cis_summary_scores", con=engine, if_exists="replace", index=False)
-
     df_feat = pd.DataFrame(all_feature_importance)
-    df_feat.to_sql("ai_feature_importance", con=engine, if_exists="replace", index=False)
+    write_table(df_feat, "ai_feature_importance", engine)
 
     if all_backtest:
         df_bt = pd.concat(all_backtest, ignore_index=True)
         df_bt["date"] = df_bt["date"].astype(str)
-        df_bt.to_sql("ai_backtest_history", con=engine, if_exists="replace", index=False)
+        write_table(df_bt, "ai_backtest_history", engine)
 
     if all_risk_history:
         df_rh = pd.concat(all_risk_history, ignore_index=True)
         df_rh["date"] = df_rh["date"].astype(str)
-        df_rh.to_sql("risk_rolling_history", con=engine, if_exists="replace", index=False)
+        write_table(df_rh, "risk_rolling_history", engine)
 
     if all_health_yearly:
         df_hy = pd.concat(all_health_yearly, ignore_index=True)
         df_hy["date"] = df_hy["date"].astype(str) if "date" in df_hy.columns else ""
-        df_hy.to_sql("health_score_yearly", con=engine, if_exists="replace", index=False)
+        write_table(df_hy, "health_score_yearly", engine)
 
     if all_fair_value_yearly:
         df_fv = pd.concat(all_fair_value_yearly, ignore_index=True)
         df_fv["date"] = df_fv["date"].astype(str) if "date" in df_fv.columns else ""
-        df_fv.to_sql("fair_value_yearly", con=engine, if_exists="replace", index=False)
+        write_table(df_fv, "fair_value_yearly", engine)
+
+    # [v17.3] เขียนตารางสรุปเป็นตารางสุดท้าย — แอปเช็ค calc_version จากตารางนี้ จึงถือว่า "พร้อม" ได้
+    # ก็ต่อเมื่อทุกตารางเขียนเสร็จแล้วเท่านั้น
+    write_table(df_res, "cis_summary_scores", engine)
 
     print("\n✅ ประมวลผลและบันทึกคะแนนจริงของหุ้นทั้ง 8 ตัวลง cis_database.db เรียบร้อยแล้ว:")
     print("=" * 85)

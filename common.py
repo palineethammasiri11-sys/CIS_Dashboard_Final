@@ -544,7 +544,16 @@ def json_list(v):
 # ============================================================================
 @st.cache_resource
 def get_connection():
-    return create_engine("sqlite:///cis_database.db")
+    # timeout 60 วินาที: ถ้ามีอีกคนกำลังเขียนฐานข้อมูลอยู่ ให้รอแทนที่จะ error "database is locked"
+    return create_engine("sqlite:///cis_database.db", connect_args={"timeout": 60})
+
+
+@st.cache_resource
+def _build_lock():
+    """[v17.3] กุญแจตัวเดียวที่ทุก session ใช้ร่วมกัน — บน Streamlit Cloud ถ้ามีผู้ใช้ 2 คน (หรือกดรีเฟรช)
+    ระหว่างที่ระบบสร้างฐานข้อมูลครั้งแรก จะไม่สร้างซ้อนกัน 2 รอบ (สาเหตุ error "table ... already exists")"""
+    import threading
+    return threading.Lock()
 
 
 def database_is_ready():
@@ -641,15 +650,21 @@ def load_all_data():
 def ensure_database_ready():
     """เรียกจาก app.py ครั้งเดียวตอนเริ่มแอป — ถ้าฐานข้อมูลไม่พร้อมจะพยายามสร้างให้อัตโนมัติ
     return True ถ้าพร้อมใช้งาน, False ถ้าล้มเหลว (จะ st.stop() ให้เองถ้าล้มเหลว)"""
-    if not database_is_ready():
-        with st.spinner("⏳ กำลังประมวลผลข้อมูลครั้งแรก (import + calculate scores)... อาจใช้เวลาสักครู่"):
+    if database_is_ready():
+        return True
+    with st.spinner("⏳ กำลังประมวลผลข้อมูลครั้งแรก (import + calculate scores)... อาจใช้เวลาสักครู่"):
+        with _build_lock():
+            # เช็คซ้ำหลังได้กุญแจ: ถ้าอีก session สร้างเสร็จไปแล้วระหว่างที่รอ ก็ไม่ต้องสร้างใหม่
+            if database_is_ready():
+                st.cache_data.clear()
+                return True
             try:
                 build_database()
                 st.cache_data.clear()
             except Exception as build_err:
                 st.error(f"⚠️ สร้างฐานข้อมูลอัตโนมัติไม่สำเร็จ: {build_err}\n\n"
                          f"กรุณาตรวจสอบว่าโฟลเดอร์ `Dataset/` ถูกอัปโหลดขึ้น GitHub ครบถ้วน "
-                         f"หรือรัน `python import_data.py` แล้วตามด้วย `python calculate_scores.py` เองก่อนเปิด Dashboard")
+                         f"แล้วกด Reboot app ใน Streamlit Cloud (เมนู Manage app)")
                 st.stop()
     return True
 

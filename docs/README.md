@@ -111,7 +111,7 @@ streamlit run app.py
 
 สคริปต์ใน `scripts/` ต้องรันจาก folder หลัก เช่น `python scripts/rebuild_database.py`, `python scripts/sensitivity_analysis.py`
 
-เทียบโมเดล AI: `python scripts/model_comparison.py` (ทดสอบปี 2025) และ `python scripts/walk_forward_models.py` (ทดสอบย้อนหลังรายปี 2016–2025 ประมาณ 1-2 นาที) ผลสรุปอยู่ใน `docs/AI_model_comparison_error_analysis.md`
+เทียบโมเดล AI: `python scripts/model_comparison.py` (ทดสอบปี 2025) และ `python scripts/walk_forward_models.py` (ทดสอบย้อนหลังรายปี 2016–2025 ประมาณ 1-2 นาที) ผลสรุปอยู่ใน `docs/AI_เทียบโมเดลและวิเคราะห์Error.md`
 
 ## วิธี Deploy บน Streamlit Community Cloud
 

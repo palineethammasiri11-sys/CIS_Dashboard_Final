@@ -39,7 +39,7 @@
 - `scripts/*.py` รันจาก folder หลักได้ (`python scripts/rebuild_database.py`) · rebuild_database ตรวจค่าชุดใหม่
 - `docs/README.md` อัปเดตวิธีรันและสรุปสูตร
 - **ใหม่** `scripts/walk_forward_models.py` ทดสอบ AI ย้อนหลังรายปี 2016–2025 เทียบ Random Forest / Gradient Boosting / Logistic Regression พร้อมตัวเลขวิเคราะห์ Error (ใช้โมเดลชุดเดียวกับ `model_comparison.py`)
-- **ใหม่** `docs/AI_model_comparison_error_analysis.md` สรุปผลเทียบโมเดล, Error Analysis, ข้อจำกัด, Future Work และข้อเสนอ Objective M(4)
+- **ใหม่** `docs/AI_เทียบโมเดลและวิเคราะห์Error.md` สรุปผลเทียบโมเดล, Error Analysis, ข้อจำกัด, Future Work และข้อเสนอ Objective M(4)
 - `calculate_modules/ai_prediction.py` แก้คำอธิบายช่วงฝึกให้ตรงกับโค้ด (2015-2024 ไม่ใช่ 2023-2024) ไม่กระทบการคำนวณ
 
 ## 5. ผลหลังแก้ (ราคาปิด 30 ธ.ค. 2025 · v17.1 AI ไม่นับในคะแนนรวม)
@@ -58,14 +58,14 @@
 - Backtest สัญญาณ Entry Timing (ไม่เปลี่ยนสูตร): STRONG BUY ดีกว่าการซื้อวันไหนก็ได้ 1.81 จุด % ใน 20 วัน (t ≈ 1.73 ยังไม่มีนัยสำคัญที่ 5%)
 
 ## 5.1 v17.1 — ตัด AI ออกจากคะแนนรวม
-- **เหตุผล:** เดิม AI (น้ำหนัก 10) นับเฉพาะหุ้นที่โมเดลผ่านด่าน ทำให้ 3 หุ้นคิดคะแนนรวมจาก 5 โมดูล อีก 5 หุ้นคิดจาก 4 โมดูล ฐานไม่เท่ากัน และผลทดสอบย้อนหลัง 10 ปี AI ผ่านด่านเพียง 16/80 ครั้ง (ดู `docs/AI_model_comparison_error_analysis.md`)
+- **เหตุผล:** เดิม AI (น้ำหนัก 10) นับเฉพาะหุ้นที่โมเดลผ่านด่าน ทำให้ 3 หุ้นคิดคะแนนรวมจาก 5 โมดูล อีก 5 หุ้นคิดจาก 4 โมดูล ฐานไม่เท่ากัน และผลทดสอบย้อนหลัง 10 ปี AI ผ่านด่านเพียง 16/80 ครั้ง (ดู `docs/AI_เทียบโมเดลและวิเคราะห์Error.md`)
 - **ตอนนี้:** คะแนนรวม = Health 25 : Fair Value 25 : Entry Timing 15 : Risk 15 (= 31.25 / 31.25 / 18.75 / 18.75%) ทุกหุ้นฐานเดียวกัน · AI ยังคำนวณและแสดงในหน้า AI Prediction, การ์ดหน้า Overview และตาราง/Radar หน้า Industry พร้อมป้าย "ไม่นับในคะแนนรวม"
 - **ผล:** อันดับและคำแนะนำของทั้ง 8 หุ้นไม่เปลี่ยน · คะแนนรวมเปลี่ยนเฉพาะ HANA 40.2 → 39.1, JMART 28.2 → 26.5, THCOM 21.8 → 19.6
 - **ไฟล์ที่แก้:** `calculate_modules/industry_benchmark.py` (BASE_WEIGHTS), `calculate_scores.py` (CALC_VERSION), `pages_content/overview.py`, `pages_content/industry_benchmark.py`, `pages_content/ai_prediction.py`, `chart_notes.py`, `scripts/sensitivity_analysis.py`, docs ที่อ้างน้ำหนัก
 
 ## 5.2 v17.1 — ปรับหน้าจอตามคำขอทีม (8 ต.ค. 2569)
 - **คำอธิบายกราฟ (`chart_notes.py`):** มีคำอธิบายครบทุกกราฟ 13 กราฟ (เพิ่มกราฟเทียบ 2 วิธีของ Fair Value) · ตัดหัวข้อ "ข้อจำกัด" ทั้งหมด · แหล่งอ้างอิงเหลือเฉพาะที่ใช้จริงในสูตรหรือข้อมูลของกราฟ (ตัด Piotroski, Soliman, Timmermann, Gu-Kelly-Xiu, SHAP, arXiv:1403.8125, Strategic Investment Matrix, Palepu-Healy-Peek, Nissim-Penman, Dechow-Hutton-Sloan · เพิ่มแหล่งที่ใช้จริงแต่ยังไม่ได้ระบุ: Damodaran (2026) dataset, Blume (1971), Breiman (2001), ThaiBMA)
-- `docs/CHART_NOTES.md` สร้างใหม่จาก `chart_notes.py` ให้ตรงกับ Dashboard พร้อมรายการแหล่งอ้างอิง
+- `docs/คำอธิบายกราฟและเทคนิคที่ใช้.md` สร้างใหม่จาก `chart_notes.py` ให้ตรงกับ Dashboard พร้อมรายการแหล่งอ้างอิง
 - **ข้อความเตือนท้ายทุกหน้า:** "หมายเหตุ: การลงทุนมีความเสี่ยง ผู้ลงทุนควรศึกษาข้อมูลก่อนการตัดสินใจลงทุน" (บรรทัดที่มาของข้อมูลไม่ซ้ำข้อความนี้แล้ว)
 - **Stock Overview:** ไม่แสดงการ์ด AI Prediction · "คิดจาก 4 โมดูล" · หัวข้อ "ผลจาก 4 โมดูล"
 - **Fair Value:** หัวข้อ KPI "มูลค่าเหมาะสม" (ตัดคำว่า ผสม รวมถึงในกราฟ) · ตัดตาราง "สมมติฐานและแหล่งที่มา" ออกจากหน้าจอ
@@ -86,6 +86,17 @@
 - โค้ด: `import_data.import_valuation_params` อ่าน `Fiscal Year` (ไม่มีคอลัมน์ = ปี 2025) · `calculate_scores` ใช้ค่าปีล่าสุดกับการประเมินปัจจุบัน และส่งค่ารายปีให้ `fair_value.build_fair_value_yearly(params_by_year=...)` · ปีที่ไม่มีค่าจะไม่วาด · กราฟ hover แสดง WACC / Target P/E ของปีนั้น · CALC_VERSION v17.2
 - ผล: การประเมินปัจจุบัน (ปี 2025) ไม่เปลี่ยน · จุดปี 2023-2024 ในกราฟเปลี่ยน เช่น ADVANC FY2023 134.08 / FY2024 158.16 บาท (เดิมใช้ค่าปี 2025 ทุกปี)
 - ข้อจำกัด: เงินเฟ้อที่ใช้แปลง WACC เป็นบาท (US 2.5% / TH 2.0%) คงที่ทุกปี · กลุ่มอุตสาหกรรมของแต่ละหุ้นใช้ indname.xls ฉบับปี 2026 กับทุกปี
+
+## 5.4 v17.3 — แก้ error ตอน deploy บน Streamlit Cloud (10 ต.ค. 2569)
+
+- **อาการ:** `สร้างฐานข้อมูลอัตโนมัติไม่สำเร็จ: (sqlite3.OperationalError) table stock_financials already exists`
+- **สาเหตุ:** มีการสร้างฐานข้อมูลซ้อนกัน 2 รอบพร้อมกัน (เช่น เปิดแอป 2 แท็บ / กดรีเฟรช / มีผู้ใช้ 2 คนระหว่างที่ระบบสร้างฐานข้อมูลครั้งแรก) ทดลองซ้ำในเครื่องด้วยการสั่ง import พร้อมกัน 3 ชุด ได้ error เดียวกันทุกตัวอักษร
+- **แก้:**
+  - `common.py`: เพิ่ม `_build_lock()` (กุญแจตัวเดียวทุก session) ให้สร้างฐานข้อมูลได้ทีละรอบ และเช็คซ้ำหลังได้กุญแจ · ตั้ง SQLite timeout 60 วินาที
+  - `import_data.write_table()`: ลบตารางเดิม (`DROP TABLE IF EXISTS`) ก่อนเขียนทุกตาราง ใช้ทั้งใน `import_data.py` และ `calculate_scores.py`
+  - `calculate_scores.py`: เขียนตาราง `cis_summary_scores` เป็นตารางสุดท้าย แอปจึงถือว่าพร้อมก็ต่อเมื่อทุกตารางเขียนเสร็จ · CALC_VERSION v17.3 (สูตรและตัวเลขไม่เปลี่ยน)
+  - แนบ `cis_database.db` ที่คำนวณแล้วไปใน zip — บน Cloud แอปเปิดได้ทันทีโดยไม่ต้องสร้างฐานข้อมูลใหม่ · เพิ่ม `.gitignore`
+- **ทดสอบ:** เปิดแอปพร้อมกัน 3 session ตอนยังไม่มีฐานข้อมูล → สร้างครั้งเดียว ไม่มี error ทั้ง 3 session
 
 ## 6. ข้อจำกัดที่ต้องเขียนในเล่ม
 1. WACC / Target P/E เป็นค่าเฉลี่ยตลาดเกิดใหม่ ไม่ใช่ของไทยโดยตรง และ WACC อาจสูงกว่าความจริงจากการแปลงสกุลเงิน

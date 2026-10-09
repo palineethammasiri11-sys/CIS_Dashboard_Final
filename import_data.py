@@ -28,6 +28,16 @@ PRICE_END_DATE = "2025-12-31"
 SEARCH_DIRS = ['.', 'Dataset', 'Dataset/train_test', 'dataset', 'dataset/train_test']
 
 
+def write_table(df, name, engine):
+    """[v17.3] เขียนตารางลง SQLite แบบ "ลบของเดิมก่อนเสมอ" แล้วค่อยสร้างใหม่ ภายใน transaction เดียว
+    แก้ error บน Streamlit Cloud: (sqlite3.OperationalError) table ... already exists
+    ซึ่งเกิดเมื่อ pandas ตรวจไม่เจอตารางเดิม (หรือมีการสร้างฐานข้อมูลซ้อนกัน 2 รอบ) แล้วสั่ง CREATE TABLE ซ้ำ"""
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text(f'DROP TABLE IF EXISTS "{name}"'))
+        df.to_sql(name, con=conn, if_exists='replace', index=False)
+
+
 def find_file(pattern):
     """ค้นหาไฟล์ตาม pattern ในหลาย ๆ โฟลเดอร์ที่เป็นไปได้"""
     for d in SEARCH_DIRS:
@@ -195,7 +205,7 @@ def import_financial_data(engine):
     save_df['roe_reported'] = save_df['roe']
     save_df['roa_reported'] = save_df['roa']
 
-    save_df.to_sql('stock_financials', con=engine, if_exists='replace', index=False)
+    write_table(save_df, 'stock_financials', engine)
     print(f"✅ นำเข้าข้อมูลงบการเงินสำเร็จ: {len(save_df)} แถว "
           f"(ครอบคลุม {save_df['ticker'].nunique()} หุ้น, ปี {sorted(save_df['year'].unique())})")
 
@@ -287,7 +297,7 @@ def import_price_data(engine):
             lambda s: s.rolling(20, min_periods=1).mean()
         )
 
-    filtered_df.to_sql('stock_daily_prices', con=engine, if_exists='replace', index=False)
+    write_table(filtered_df, 'stock_daily_prices', engine)
 
     if len(filtered_df) > 0:
         print(f"✅ นำเข้าข้อมูลราคาหุ้นสำเร็จ: {len(filtered_df)} แถว "
@@ -339,7 +349,7 @@ def import_risk_metrics(engine):
             out[dst] = clean_numeric_series(df[src]) if numeric else df[src].astype(str).values
     out = out[out['ticker'].isin(TARGET_STOCKS)].drop_duplicates(subset=['ticker']).reset_index(drop=True)
 
-    out.to_sql('stock_risk_static', con=engine, if_exists='replace', index=False)
+    write_table(out, 'stock_risk_static', engine)
     print(f"✅ นำเข้าข้อมูลความเสี่ยงสำเร็จ: {len(out)} หุ้น")
 
 
@@ -373,7 +383,7 @@ def import_valuation_params(engine):
     })
     out = (out[out['ticker'].isin(TARGET_STOCKS)].drop_duplicates(subset=['ticker', 'fiscal_year'])
               .sort_values(['ticker', 'fiscal_year']).reset_index(drop=True))
-    out.to_sql('valuation_params', con=engine, if_exists='replace', index=False)
+    write_table(out, 'valuation_params', engine)
     years = sorted(out['fiscal_year'].unique())
     print(f"✅ นำเข้า WACC / Target P/E สำเร็จ: {out['ticker'].nunique()} หุ้น × ปี {years} (ไฟล์ {file_path})")
 
