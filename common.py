@@ -11,11 +11,18 @@ common.py
 
 โครงสร้างไฟล์:
 1. ค่าคงที่ (TARGET_STOCKS, SECTOR_MAP, COMPANY_NAMES, PAGES)
-2. CSS/ธีมของทั้งแอป
-3. Helper functions ที่ใช้ข้ามหน้า (fmt_mb, safe, show_chart, render_nav_footer, create_gauge)
+2. CSS/ธีมของทั้งแอป (Design tokens ชุดเดียว — v17.4)
+3. Helper functions ที่ใช้ข้ามหน้า (fmt_*, kpi, card, grid, show_chart, render_nav_footer)
 4. การเชื่อมต่อฐานข้อมูล + auto-healing (database_is_ready, build_database, load_all_data)
 5. PageContext — โครงสร้างข้อมูลที่ส่งต่อให้ทุกหน้า
-6. render_sidebar() / render_header_bar() — UI ส่วนที่ใช้ร่วมกันทุกหน้า
+6. render_sidebar() / render_header_bar() / scroll_to_top_on_page_change() — UI ส่วนที่ใช้ร่วมกันทุกหน้า
+
+[v17.4] ปรับ UX/UI ทั้งแอป
+- เปลี่ยนหน้าแล้วเลื่อนขึ้นบนสุดอัตโนมัติ (scroll_to_top_on_page_change)
+- ระยะห่าง/ขนาดตัวอักษร/การ์ดชุดเดียวทุกหน้า (ค่าคงที่ GAP, CARD, ฟังก์ชัน kpi(), grid(), card())
+- แถวการ์ดใช้ CSS Grid ใน HTML ก้อนเดียว → การ์ดในแถวเดียวกันสูงเท่ากันเสมอ
+- ใต้กราฟเหลือแถบเครื่องมือแถวเดียว: "ⓘ วิธีอ่านกราฟ" (popover ไม่กินพื้นที่) + "🔍 ขยายกราฟ"
+- กราฟทุกตัวใช้รูปแบบเดียวกัน (style_fig) และกันข้อความ/ชื่อแกนทับกัน
 """
 
 import streamlit as st
@@ -57,6 +64,17 @@ PAGE_COLORS = {
     " Fair Value": "#F59E0B", " Risk Analysis": "#EF4444", " Entry Timing": "#6366F1", " AI Prediction": "#A855F7",
 }
 
+# ---------------------------------------------------------------------------
+# Design tokens (v17.4) — แก้ที่นี่ที่เดียว ทุกหน้าใช้ร่วมกัน
+# ---------------------------------------------------------------------------
+GAP = 12                       # ระยะห่างระหว่างการ์ด (px) — เท่ากับช่องว่างของคอลัมน์ Streamlit ใน CSS ด้านล่าง
+INK, INK2, MUTED, FAINT = "#0F172A", "#334155", "#64748B", "#94A3B8"
+LINE, SOFT, PANEL = "#E2E8F0", "#F1F5F9", "#F8FAFC"
+CHART_H = 300                  # ความสูงมาตรฐานของกราฟ (px)
+TOOLS_H = 46                   # ความสูงแถบเครื่องมือใต้กราฟ (ปุ่ม 34 px + ระยะห่าง 12 px) — ใช้คำนวณให้การ์ดข้างกราฟสูงเท่ากัน
+FONT = '"Source Sans Pro", "Sarabun", "Leelawadee UI", "Tahoma", sans-serif'
+
+
 # ============================================================================
 # 2. CSS / ธีม Light Clean ของทั้งแอป
 # ============================================================================
@@ -68,235 +86,114 @@ def setup_page_and_css():
         initial_sidebar_state="expanded"
     )
 
-    st.markdown("""
+    st.markdown(f"""
     <style>
+        /* =========================================================
+           GLOBAL
+           ========================================================= */
+        .stApp {{ background-color: {PANEL}; }}
+        .stApp, .stApp p, .stApp li {{ font-size: 14.5px; }}
+        p {{ color: #475569; }}
+        h1, h2, h3 {{ color: {INK} !important; }}
+
+        /* แถบหัวของ Streamlit ให้โปร่งและเตี้ยลง เนื้อหาจึงขึ้นได้สูงขึ้น */
+        header[data-testid="stHeader"] {{ background: transparent; height: 2.6rem; }}
+
+        /* พื้นที่เนื้อหาหลัก (Streamlit 1.38+ ใช้ stMainBlockContainer; รุ่นเก่าใช้ .main .block-container) */
+        [data-testid="stMainBlockContainer"], .stMainBlockContainer, .main .block-container {{
+            max-width: 1480px;
+            padding: 2.6rem 2rem 2rem 2rem !important;
+        }}
+
+        /* ระยะห่างแนวตั้ง/แนวนอนชุดเดียวทั้งแอป */
+        [data-testid="stMain"] [data-testid="stVerticalBlock"] {{ gap: {GAP}px; }}
+        [data-testid="stMain"] [data-testid="stHorizontalBlock"] {{ gap: {GAP}px; }}
+        [data-testid="stElementContainer"]:has(> iframe[height="0"]),
+        .element-container:has(> iframe[height="0"]) {{ display: none; }}
 
         /* =========================================================
-           GLOBAL — Clean Financial Platform
+           CARDS
            ========================================================= */
-
-        html, body, [class*="css"] {
-            font-size: 16px;
-        }
-
-        .stApp {
-            background-color: #F8FAFC;
-        }
-
-        .main .block-container {
-            max-width: 1400px;
-            padding-top: 2rem;
-            padding-bottom: 3rem;
-            padding-left: 3rem;
-            padding-right: 3rem;
-        }
-
+        .cis-card {{
+            background: #FFFFFF; border: 1px solid {LINE}; border-radius: 12px;
+            padding: 14px 16px; box-sizing: border-box; min-width: 0;
+        }}
+        .cis-grid {{ display: grid; gap: {GAP}px; align-items: stretch; }}
+        .cis-grid > * {{ min-width: 0; }}
+        /* กราฟทุกตัวเป็นการ์ดเดียวกับการ์ด HTML (กรอบ มุมโค้ง พื้นขาว) */
+        [data-testid="stPlotlyChart"] {{
+            background: #FFFFFF; border: 1px solid {LINE}; border-radius: 12px; overflow: hidden; box-sizing: border-box;
+        }}
+        [data-testid="stDialog"] [data-testid="stPlotlyChart"] {{ border: none; }}
 
         /* =========================================================
-           CARDS — Clean / Soft / Minimal
+           BUTTONS / POPOVER / EXPANDER
            ========================================================= */
-
-        .metric-card {
-            background: #FFFFFF;
-            padding: 20px;
-            border-radius: 14px;
-            border: 1px solid #E2E8F0;
-            text-align: center;
-            height: 100%;
-            box-shadow: none;
-        }
-
-        .hero-card {
-            background: #FFFFFF;
-            padding: 24px;
-            border-radius: 16px;
-            border: 1px solid #E2E8F0;
-            box-shadow: none;
-        }
-
-        .dim-card {
-            background: #FFFFFF;
-            border: 1px solid #E2E8F0;
-            border-radius: 12px;
-            padding: 16px;
-            text-align: center;
-            box-shadow: none;
-        }
-
-
-        /* =========================================================
-           BUTTONS — Minimal
-           ========================================================= */
-
-        .stButton > button {
+        .stButton > button, [data-testid="stPopover"] > div > button {{
             background-color: #FFFFFF !important;
-            border: 1px solid #E2E8F0 !important;
-            color: #334155 !important;
+            border: 1px solid {LINE} !important;
+            color: {INK2} !important;
             border-radius: 8px !important;
             font-weight: 600 !important;
-            font-size: 14px !important;
-            padding: 9px 16px !important;
-            transition: all 0.2s ease-in-out !important;
+            padding: 4px 12px !important;
+            min-height: 34px !important;
             box-shadow: none !important;
-        }
-
-        .stButton > button:hover {
-            background-color: #F8FAFC !important;
-            border-color: #CBD5E1 !important;
-            color: #0F172A !important;
-        }
-
-        .stButton > button p {
-            font-size: 14px !important;
-            font-weight: 600 !important;
-        }
-
-
-        /* =========================================================
-           SIDEBAR — Clean White
-           ========================================================= */
-
-        [data-testid="stSidebar"] {
-            background-color: #FFFFFF;
-            border-right: 1px solid #E2E8F0;
-        }
-
-        [data-testid="stSidebar"] * {
-            font-size: 15px;
-        }
-
-
-        /* Hide radio circles */
-
-        [data-testid="stSidebar"]
-        [data-testid="stRadio"]
-        div[role="radiogroup"]
-        label > div:first-child,
-
-        [data-testid="stSidebar"]
-        [data-testid="stRadio"]
-        input[type="radio"],
-
-        [data-testid="stSidebar"]
-        [data-testid="stRadio"]
-        svg {
-            display: none !important;
-            width: 0 !important;
-            height: 0 !important;
-            margin: 0 !important;
-        }
-
-
-        /* Navigation spacing */
-
-        [data-testid="stSidebar"]
-        [data-testid="stRadio"]
-        div[role="radiogroup"] {
-            gap: 4px !important;
-        }
-
-
-        /* Navigation item */
-
-        [data-testid="stSidebar"]
-        [data-testid="stRadio"]
-        div[role="radiogroup"]
-        label {
-            background-color: transparent !important;
-            border: 1px solid transparent !important;
-            border-radius: 8px !important;
-            padding: 10px 12px !important;
-            margin: 0 !important;
-            cursor: pointer !important;
-            width: 100% !important;
-            display: flex !important;
-            align-items: center !important;
             transition: all 0.15s ease-in-out !important;
-        }
+        }}
+        .stButton > button p, [data-testid="stPopover"] > div > button p {{
+            font-size: 13px !important; font-weight: 600 !important;
+        }}
+        .stButton > button:hover, [data-testid="stPopover"] > div > button:hover {{
+            background-color: {PANEL} !important; border-color: #CBD5E1 !important; color: {INK} !important;
+        }}
+        [data-testid="stPopoverBody"] {{ max-width: 560px; }}
+        [data-testid="stPopoverBody"] p, [data-testid="stPopoverBody"] li {{ font-size: 13.5px; line-height: 1.6; }}
 
-
-        /* Hover */
-
-        [data-testid="stSidebar"]
-        [data-testid="stRadio"]
-        div[role="radiogroup"]
-        label:hover {
-            background-color: #F8FAFC !important;
-            border-color: #F1F5F9 !important;
-        }
-
-
-        /* Navigation text */
-
-        [data-testid="stSidebar"]
-        [data-testid="stRadio"]
-        div[role="radiogroup"]
-        label p {
-            font-size: 14px !important;
-            color: #475569 !important;
-            font-weight: 500 !important;
-            margin: 0 !important;
-            line-height: 1.4 !important;
-        }
-
-
-        /* Sidebar labels */
-
-        [data-testid="stSidebar"] label,
-        [data-testid="stSidebar"] .stCaption,
-        [data-testid="stSidebar"]
-        [data-testid="stCaptionContainer"] {
-            color: #64748B !important;
-        }
-  
-        [data-testid="stSidebar"]
-        [data-testid="stSelectbox"]
-        label p {
-            color: #64748B !important;
-            font-size: 13px !important;
-            font-weight: 600 !important;
-        }
-
-
-        /* Selectbox */
-
-        [data-testid="stSidebar"]
-        [data-testid="stSelectbox"] > div {
-            background-color: #FFFFFF !important;
-            border: 1px solid #E2E8F0 !important;
-            border-radius: 8px !important;
-            box-shadow: none !important;
-        }
-
-        [data-testid="stSidebar"]
-        [data-testid="stSelectbox"] [data-baseweb="select"] > div {
-            background-color: #FFFFFF !important;
-            border-color: #E2E8F0 !important;
-            border-radius: 8px !important;
-            color: #0F172A !important;
-        }
-
-        [data-testid="stSidebar"]
-        [data-testid="stSelectbox"] [data-baseweb="select"] span {
-            color: #0F172A !important;
-        }
-
+        /* ตัวเลือกช่วงเวลา (radio แนวนอน) ให้เป็นแถวเตี้ย ๆ */
+        [data-testid="stMain"] [data-testid="stRadio"] label p {{ font-size: 13px; }}
+        [data-testid="stMain"] [data-testid="stRadio"] > label {{ display: none; }}
+        [data-testid="stMain"] [data-testid="stSelectbox"] label p {{ font-size: 13px; color: {MUTED}; }}
 
         /* =========================================================
-           SECTION HEADINGS
+           SIDEBAR
            ========================================================= */
-
-        h1, h2, h3 {
-            color: #0F172A !important;
-        }
-
-        p {
-            color: #475569;
-        }
-
+        [data-testid="stSidebar"] {{ background-color: #FFFFFF; border-right: 1px solid {LINE}; }}
+        [data-testid="stSidebar"] * {{ font-size: 14.5px; }}
+        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label > div:first-child,
+        [data-testid="stSidebar"] [data-testid="stRadio"] input[type="radio"],
+        [data-testid="stSidebar"] [data-testid="stRadio"] svg {{
+            display: none !important; width: 0 !important; height: 0 !important; margin: 0 !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] {{ gap: 2px !important; }}
+        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label {{
+            background-color: transparent !important; border: 1px solid transparent !important;
+            border-radius: 8px !important; padding: 8px 12px !important; margin: 0 !important;
+            cursor: pointer !important; width: 100% !important; display: flex !important; align-items: center !important;
+            transition: all 0.15s ease-in-out !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label:hover {{
+            background-color: {PANEL} !important; border-color: {SOFT} !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label p {{
+            font-size: 14px !important; color: #475569 !important; font-weight: 500 !important;
+            margin: 0 !important; line-height: 1.4 !important;
+        }}
+        [data-testid="stSidebar"] label, [data-testid="stSidebar"] .stCaption,
+        [data-testid="stSidebar"] [data-testid="stCaptionContainer"] {{ color: {MUTED} !important; }}
+        [data-testid="stSidebar"] [data-testid="stSelectbox"] > div {{
+            background-color: #FFFFFF !important; border: 1px solid {LINE} !important;
+            border-radius: 8px !important; box-shadow: none !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stSelectbox"] [data-baseweb="select"] > div {{
+            background-color: #FFFFFF !important; border-color: {LINE} !important;
+            border-radius: 8px !important; color: {INK} !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stSelectbox"] [data-baseweb="select"] span {{ color: {INK} !important; }}
+        [data-testid="stSidebar"] hr {{ margin: 10px 0 !important; }}
     </style>
     """, unsafe_allow_html=True)
-  
+
+
 # ============================================================================
 # 3. Helper functions ที่ใช้ข้ามหน้า
 # ============================================================================
@@ -344,6 +241,45 @@ def create_gauge(score, title, color_hex):
     return fig
 
 
+# ----------------------------------------------------------------------------
+# 3.1 กราฟ: รูปแบบเดียวกันทุกหน้า + แถบเครื่องมือใต้กราฟ
+# ----------------------------------------------------------------------------
+def style_fig(fig, height=CHART_H, legend=False, margin=None, title=None, sub=None):
+    """รูปแบบมาตรฐานของกราฟทุกตัว (ฟอนต์ สีพื้น เส้นตาราง ระยะขอบ หัวข้อในกรอบกราฟ)
+    - title/sub: หัวข้ออยู่ "ในกรอบกราฟ" มุมซ้ายบน → กราฟทุกตัวเป็นการ์ดเดียวกับหัวข้อ (สูงเท่ากันเมื่อวางคู่กัน)
+    - legend=True: วาง legend ใต้หัวข้อ เหนือพื้นที่กราฟ (ไม่ทับเส้นกราฟ ไม่ทับหัวข้อ)
+    - automargin ให้ Plotly ขยายขอบเองเมื่อชื่อแกน/ตัวเลขยาว (กันข้อความถูกตัด/ทับกัน)
+    - ชื่อแกนห่างจากตัวเลขบนแกน (title standoff) กันชื่อแกนภาษาไทยทับตัวเลข"""
+    top = 14 + (32 if title else 0) + (26 if legend else 0)
+    m = dict(l=10, r=14, t=top, b=10)
+    if margin:
+        m.update(margin)
+    fig.update_layout(
+        height=height, margin=m, paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
+        font=dict(family=FONT, size=12, color="#475569"),
+        hoverlabel=dict(font=dict(family=FONT, size=12)),
+        showlegend=legend,
+    )
+    if title:
+        t = f"<b>{title}</b>"
+        if sub:
+            t += f"<span style='font-size:12px;color:{FAINT};font-weight:400;'>   {sub}</span>"
+        fig.update_layout(title=dict(text=t, x=0, xanchor="left", xref="container", y=1, yanchor="top",
+                                     yref="container", pad=dict(t=12, l=14),
+                                     font=dict(family=FONT, size=13.5, color=INK2)))
+    if legend:
+        fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.0, xanchor="left", x=0,
+                                      font=dict(size=11.5), bgcolor="rgba(255,255,255,0)"))
+    try:
+        fig.update_xaxes(automargin=True, gridcolor=SOFT, zeroline=False, title_standoff=8,
+                         title_font=dict(size=12), tickfont=dict(size=11.5))
+        fig.update_yaxes(automargin=True, gridcolor=SOFT, zeroline=False, title_standoff=10,
+                         title_font=dict(size=12), tickfont=dict(size=11.5))
+    except Exception:
+        pass
+    return fig
+
+
 @st.dialog("ขยายกราฟ", width="large")
 def _open_chart_dialog(fig, expand_height):
     big_fig = go.Figure(fig)
@@ -353,34 +289,28 @@ def _open_chart_dialog(fig, expand_height):
         big_fig.update_yaxes(tickfont=dict(size=13))
     except Exception:
         pass
-    st.plotly_chart(
-        big_fig,
-        use_container_width=True,
-        config={
-            'displayModeBar': True
-        },
-        key=f"dlg_{id(fig)}"
-    )
+    st.plotly_chart(big_fig, use_container_width=True, config={'displayModeBar': True}, key=f"dlg_{id(fig)}")
 
 
-def render_chart_note(key):
-    """แถบพับ 'ⓘ วิธีอ่านกราฟและเทคนิคที่ใช้' ใต้กราฟ — ข้อความทั้งหมดอยู่ใน chart_notes.py
+def render_chart_note(key, compact=False):
+    """ปุ่ม 'ⓘ วิธีอ่านกราฟ' แบบ popover (เปิดเป็นกล่องลอย ไม่ดันเนื้อหาลง) — ข้อความทั้งหมดอยู่ใน chart_notes.py
     (คอมเมนต์อาจารย์: ต้องระบุว่ากราฟแต่ละตัวใช้เทคนิคอะไร ไม่ใช่แสดงแค่กราฟ)"""
     try:
         from chart_notes import note_markdown
     except ImportError:
         return
     md = note_markdown(key)
-    if md:
-        with st.expander("ⓘ วิธีอ่านกราฟและเทคนิคที่ใช้", expanded=False):
-            st.markdown(md)
+    if not md:
+        return
+    label = "ⓘ วิธีอ่าน" if compact else "ⓘ วิธีอ่านกราฟและเทคนิค"
+    with st.popover(label, use_container_width=True):
+        st.markdown(md)
 
 
-def show_chart(fig, key, expand_height=680):
-    """แสดงกราฟ Plotly พร้อมปุ่ม '🔍 ขยายกราฟ' ที่เปิดกราฟเวอร์ชันใหญ่ในหน้าต่างลอย (dialog)
-    ใช้แทน st.plotly_chart ตรงๆ ทุกจุดที่เป็นกราฟหลักของหน้า
-    ถ้า key มีคำอธิบายใน chart_notes.py จะแสดงแถบ 'ⓘ วิธีอ่านกราฟ' ใต้กราฟให้อัตโนมัติ"""
-    # [FIX-UI9] ให้ Plotly ขยายขอบเองเมื่อชื่อแกน/ตัวเลขยาวเกิน แทนการตัดทิ้งบนจอแคบ (ไม่มีผลกับกราฟเรดาร์)
+def show_chart(fig, key, expand_height=680, expandable=True, compact_tools=False):
+    """แสดงกราฟ Plotly + แถบเครื่องมือแถวเดียวใต้กราฟ: [ⓘ วิธีอ่านกราฟ] [🔍 ขยายกราฟ]
+    ใช้ฟังก์ชันนี้แทน st.plotly_chart ตรง ๆ ทุกจุด (กราฟทุกตัวจะหน้าตาเหมือนกัน)
+    compact_tools=True → ข้อความปุ่มสั้น (ใช้กับกราฟที่อยู่ในคอลัมน์แคบ เช่น 3 กราฟเรียงกัน)"""
     try:
         fig.update_xaxes(automargin=True)
         fig.update_yaxes(automargin=True)
@@ -388,9 +318,23 @@ def show_chart(fig, key, expand_height=680):
         pass
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'responsive': True},
                     key=f"{key}_small")
-    if st.button("🔍 ขยายกราฟ", key=f"{key}_expand_btn", use_container_width=True):
-        _open_chart_dialog(fig, expand_height)
-    render_chart_note(key)
+    try:
+        from chart_notes import CHART_NOTES
+        has_note = key in CHART_NOTES
+    except ImportError:
+        has_note = False
+    if not (has_note or expandable):
+        return
+    cols = st.columns(2) if (has_note and expandable) else [st.container()]
+    i = 0
+    if has_note:
+        with cols[i]:
+            render_chart_note(key, compact=compact_tools)
+        i += 1
+    if expandable:
+        with cols[min(i, len(cols) - 1)]:
+            if st.button("🔍 ขยาย" if compact_tools else "🔍 ขยายกราฟ", key=f"{key}_expand_btn", use_container_width=True):
+                _open_chart_dialog(fig, expand_height)
 
 
 def render_source_line(ctx):
@@ -402,7 +346,7 @@ def render_source_line(ctx):
         d0 = d1 = "-"
     fy = (f"FY{int(ctx.fin_stock['year'].min())}-FY{int(ctx.fin_stock['year'].max())}"
           if not ctx.fin_stock.empty else "-")
-    st.html(f"""<div style="font-size:13px;color:#94A3B8;margin-top:10px;line-height:1.6;">
+    st.html(f"""<div style="font-size:12.5px;color:{FAINT};line-height:1.6;">
         ข้อมูลราคา: {d0} ถึง {d1} (Yahoo Finance ผ่านไฟล์ใน Dataset) · งบการเงิน: {fy} ·
         ดัชนีอ้างอิง Beta: TDEX (ETF อ้างอิง SET50) · WACC / Target P/E: Damodaran (2026)</div>""")
 
@@ -413,9 +357,8 @@ def render_nav_footer(ctx, current_page):
     prev_page = PAGES[idx - 1] if idx > 0 else None
     next_page = PAGES[idx + 1] if idx < len(PAGES) - 1 else None
     key_prefix = current_page.strip().replace(" ", "_").lower()
-    st.markdown("<div style='margin-top:24px;'></div>", unsafe_allow_html=True)
-    st.markdown("""<div style="border-top:1px solid #E2E8F0; padding-top:16px; margin-bottom:6px;"></div>""", unsafe_allow_html=True)
-    col_prev, col_home, col_next, col_disc = st.columns([1.3, 1.3, 1.3, 3.3])
+    st.html(f'<div style="border-top:1px solid {LINE};margin-top:6px;"></div>')
+    col_prev, col_home, col_next, col_disc = st.columns([1.75, 0.9, 1.75, 2.4], vertical_alignment="center")
     with col_prev:
         if prev_page and st.button(f"⬅ ก่อนหน้า: {prev_page.strip()}", key=f"btn_prev_{key_prefix}",
                                    use_container_width=True):
@@ -431,16 +374,17 @@ def render_nav_footer(ctx, current_page):
             st.session_state["pending_nav"] = next_page
             st.rerun()
     with col_disc:
-        st.markdown('<div style="font-size:15px; color:#64748B; text-align:right; padding-top:11px; line-height:1.5;">'
-                    'หมายเหตุ: การลงทุนมีความเสี่ยง ผู้ลงทุนควรศึกษาข้อมูลก่อนการตัดสินใจลงทุน</div>', unsafe_allow_html=True)
+        st.html(f'<div style="font-size:13px;color:{MUTED};text-align:right;line-height:1.5;">'
+                'หมายเหตุ: การลงทุนมีความเสี่ยง ผู้ลงทุนควรศึกษาข้อมูลก่อนการตัดสินใจลงทุน</div>')
     render_source_line(ctx)
 
 
 # ----------------------------------------------------------------------------
-# 3.1 Helper สำหรับแสดงผล (ทุกหน้าใช้ร่วมกัน — Blueprint 5.4 ข/จ)
+# 3.2 Helper สำหรับแสดงผล (ทุกหน้าใช้ร่วมกัน — Blueprint 5.4 ข/จ)
 # ----------------------------------------------------------------------------
 NA = "N/A"
-CARD = "background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:16px;box-sizing:border-box;"
+CARD = f"background:#FFFFFF;border:1px solid {LINE};border-radius:12px;padding:14px 16px;box-sizing:border-box;min-width:0;"
+TILE = f"background:{PANEL};border:1px solid {LINE};border-radius:10px;padding:10px 12px;box-sizing:border-box;min-width:0;"
 
 
 def is_na(v):
@@ -471,22 +415,65 @@ def html(markup):
     st.html(markup)
 
 
+def card(inner, style="", cls=""):
+    """การ์ดพื้นขาวมาตรฐาน (ใช้ซ้อนใน grid ได้)"""
+    return f'<div class="cis-card {cls}" style="height:100%;{style}">{inner}</div>'
+
+
+def centered_card(title_html, body, style=""):
+    """การ์ดที่หัวข้ออยู่บน และเนื้อหาอยู่กึ่งกลางแนวตั้งของพื้นที่ที่เหลือ
+    (ใช้กับการ์ดคะแนนที่ถูกยืดให้สูงเท่ากราฟข้าง ๆ → ไม่มีที่ว่างโล่งค้างอยู่ด้านล่าง)"""
+    return (f'<div class="cis-card" style="height:100%;display:flex;flex-direction:column;{style}">{title_html}'
+            f'<div style="flex:1 1 auto;display:flex;flex-direction:column;justify-content:center;">{body}</div></div>')
+
+
+def grid(items, cols=None, template=None, style=""):
+    """วางการ์ดหลายใบในแถวเดียวด้วย CSS Grid → ทุกใบสูงเท่ากันเสมอ (แก้ปัญหาการ์ดสูงไม่เท่ากัน/ช่องว่างไม่สมมาตร)
+    cols: จำนวนคอลัมน์เท่ากัน หรือ template: เช่น '1fr 2fr'"""
+    tpl = template or f"repeat({cols or len(items)},minmax(0,1fr))"
+    return f'<div class="cis-grid" style="grid-template-columns:{tpl};{style}">{"".join(items)}</div>'
+
+
 def page_title(title, subtitle):
-    st.html(f"""<div style="margin-bottom:18px;">
-        <div class="module-title" style="font-size:26px;font-weight:700;color:#0F172A;letter-spacing:0.3px;">{title}</div>
-        <div class="module-subtitle" style="font-size:16px;color:#64748B;margin-top:4px;">{subtitle}</div></div>""")
+    st.html(f"""<div style="margin:0 0 2px 0;">
+        <div class="module-title" style="font-size:22px;font-weight:800;color:{INK};letter-spacing:0.3px;line-height:1.25;">{title}</div>
+        <div class="module-subtitle" style="font-size:14px;color:{MUTED};margin-top:2px;line-height:1.5;">{subtitle}</div></div>""")
 
 
-def section_title(text, sub=""):
-    sub_html = f'<span style="font-size:13.5px;font-weight:400;color:#94A3B8;margin-left:8px;">{sub}</span>' if sub else ""
-    return (f'<div style="font-size:14.5px;font-weight:800;color:#475569;letter-spacing:0.5px;margin-bottom:10px;">'
-            f'{text}{sub_html}</div>')
+def section_title(text, sub="", mb=8):
+    """หัวข้อย่อยรูปแบบเดียวทั้งแอป (คำอธิบายเสริมต่อท้ายตัวเล็ก ตัดบรรทัดได้ ไม่ดันความสูงจนไม่เท่ากัน)"""
+    sub_html = f'<span style="font-size:12.5px;font-weight:400;color:{FAINT};margin-left:6px;">{sub}</span>' if sub else ""
+    return (f'<div style="font-size:13.5px;font-weight:800;color:{INK2};letter-spacing:0.3px;margin-bottom:{mb}px;'
+            f'line-height:1.45;">{text}{sub_html}</div>')
 
 
-def badge(lab, size=13):
+def chart_header(text, sub="", lines=1):
+    """หัวข้อเหนือกราฟที่อยู่เคียงกันหลายกราฟ — กำหนดความสูงคงที่ ให้กราฟทุกตัวเริ่มที่บรรทัดเดียวกัน"""
+    h = 22 * lines
+    st.html(f'<div style="min-height:{h}px;">{section_title(text, sub, mb=0)}</div>')
+
+
+def kpi(label, value, sub="", color=INK, size=22, grey=False):
+    """การ์ดตัวเลขหลัก (KPI) รูปแบบเดียวทั้งแอป — ใช้คู่กับ grid() เพื่อให้ทุกใบสูงเท่ากัน"""
+    bg = f"background:{SOFT};" if grey else ""
+    c = FAINT if grey else color
+    return (f'<div class="cis-card" style="height:100%;{bg}">'
+            f'<div style="font-size:12.5px;font-weight:700;color:{MUTED};letter-spacing:0.2px;">{label}</div>'
+            f'<div style="font-size:{size}px;font-weight:800;color:{c};margin-top:2px;line-height:1.3;">{value}</div>'
+            f'<div style="font-size:12.5px;color:{MUTED};margin-top:3px;line-height:1.5;">{sub}</div></div>')
+
+
+def tile(label, value, sub="", color=INK, size=17):
+    """กล่องย่อยพื้นเทาอ่อน (ใช้ภายในการ์ด)"""
+    return (f'<div style="{TILE}"><div style="font-size:12.5px;color:{MUTED};font-weight:600;">{label}</div>'
+            f'<div style="font-size:{size}px;font-weight:800;color:{color};margin-top:2px;line-height:1.3;">{value}</div>'
+            f'<div style="font-size:12px;color:{MUTED};margin-top:2px;line-height:1.45;">{sub}</div></div>')
+
+
+def badge(lab, size=12.5):
     """ป้ายสี จาก dict ที่ได้จาก labels.*_label()"""
     return (f'<span style="display:inline-block;background:{lab["bg"]};color:{lab["color"]};border:1px solid {lab["color"]};'
-            f'border-radius:14px;padding:2px 10px;font-size:{size}px;font-weight:700;white-space:nowrap;">'
+            f'border-radius:14px;padding:1px 10px;font-size:{size}px;font-weight:700;white-space:nowrap;">'
             f'{lab["th"]} · {lab["en"]}</span>')
 
 
@@ -494,21 +481,21 @@ def ring(score, color, center=None, sub="/100", size=92):
     """วงแหวนคะแนน 0-100 (score None → วงเทา)"""
     pct = 0 if L.is_missing(score) else max(0.0, min(100.0, float(score)))
     center = (NA if L.is_missing(score) else f"{float(score):.0f}") if center is None else center
-    inner = size - 16
+    inner = size - 14
     return f"""<div style="margin:0 auto;width:{size}px;height:{size}px;border-radius:50%;
-        background:conic-gradient({color} 0% {pct}%,#E2E8F0 {pct}% 100%);display:flex;align-items:center;justify-content:center;">
+        background:conic-gradient({color} 0% {pct}%,{LINE} {pct}% 100%);display:flex;align-items:center;justify-content:center;">
         <div style="width:{inner}px;height:{inner}px;border-radius:50%;background:#FFFFFF;display:flex;flex-direction:column;
-        align-items:center;justify-content:center;"><span style="font-size:{int(size/4.3)}px;font-weight:800;color:#0F172A;line-height:1;">{center}</span>
-        <span style="font-size:12.5px;color:#64748B;">{sub}</span></div></div>"""
+        align-items:center;justify-content:center;"><span style="font-size:{int(size/4.2)}px;font-weight:800;color:{INK};line-height:1;">{center}</span>
+        <span style="font-size:11.5px;color:{MUTED};">{sub}</span></div></div>"""
 
 
 def scale_bar(score, color, marks=(50, 65, 75), labels_txt=None):
     """แถบ 0-100 พร้อมขีดบอกเส้นเกณฑ์ (ใช้ในการ์ดคำแนะนำ)"""
     pct = 0 if L.is_missing(score) else max(0.0, min(100.0, float(score)))
-    ticks = "".join(f'<div style="position:absolute;left:{m}%;top:-4px;height:18px;border-left:2px dashed #475569;"></div>'
-                    f'<div style="position:absolute;left:{m}%;top:16px;transform:translateX(-50%);font-size:11.5px;color:#64748B;">{m}</div>'
+    ticks = "".join(f'<div style="position:absolute;left:{m}%;top:-4px;height:16px;border-left:2px dashed #475569;"></div>'
+                    f'<div style="position:absolute;left:{m}%;top:14px;transform:translateX(-50%);font-size:11px;color:{MUTED};">{m}</div>'
                     for m in marks)
-    return f"""<div style="position:relative;height:10px;background:#E2E8F0;border-radius:6px;margin:8px 0 22px 0;">
+    return f"""<div style="position:relative;height:8px;background:{LINE};border-radius:6px;margin:8px 0 20px 0;">
         <div style="width:{pct}%;height:100%;background:{color};border-radius:6px;"></div>{ticks}</div>"""
 
 
@@ -526,8 +513,8 @@ def rank_text(info, col, with_sector=True):
 
 
 def na_box(text, color="#94A3B8"):
-    return (f'<div style="background:rgba(148,163,184,0.10);border:1px dashed {color};border-radius:10px;padding:14px;'
-            f'color:#475569;font-size:14.5px;line-height:1.6;">{text}</div>')
+    return (f'<div style="background:rgba(148,163,184,0.10);border:1px dashed {color};border-radius:10px;padding:12px 14px;'
+            f'color:#475569;font-size:14px;line-height:1.6;box-sizing:border-box;">{text}</div>')
 
 
 def json_list(v):
@@ -738,21 +725,49 @@ def build_context(selected_ticker, scores_df, daily_df, fin_df, feat_imp_df,
 
 
 # ============================================================================
-# 6. UI ส่วนกลาง: Sidebar + Header Bar (ใช้เหมือนกันทุกหน้า)
+# 6. UI ส่วนกลาง: Sidebar + Header Bar + เลื่อนขึ้นบนสุดเมื่อเปลี่ยนหน้า
 # ============================================================================
+def scroll_to_top_on_page_change(page):
+    """[v17.4] เปลี่ยนหน้าแล้วเลื่อนจอขึ้นบนสุดของหน้าใหม่อัตโนมัติ
+    หลักการ: ฝังสคริปต์เล็ก ๆ (iframe สูง 0 px ใน sidebar) ที่มีชื่อหน้าอยู่ในเนื้อหา
+    - เปลี่ยนหน้า → เนื้อหาสคริปต์เปลี่ยน → Streamlit โหลด iframe ใหม่ → สคริปต์สั่งเลื่อนพื้นที่เนื้อหาขึ้นบนสุด
+    - อยู่หน้าเดิม (เช่น กดเปลี่ยนช่วงเวลาของกราฟ / เปลี่ยนหุ้น) → เนื้อหาเหมือนเดิม → ไม่เลื่อน ตำแหน่งที่อ่านอยู่ไม่หาย"""
+    import streamlit.components.v1 as components
+    safe_page = str(page).replace("<", "").replace(">", "").strip()
+    script = f"""<script>
+    /* page: {safe_page} */
+    (function () {{
+      var d = window.parent.document;
+      var sel = ['[data-testid="stMain"]', 'section.stMain', '[data-testid="stAppViewContainer"]',
+                 'section.main', '.main', '[data-testid="stAppScrollToBottomContainer"]'];
+      function goTop() {{
+        sel.forEach(function (s) {{
+          d.querySelectorAll(s).forEach(function (el) {{
+            try {{ el.scrollTo({{ top: 0, behavior: 'auto' }}); }} catch (e) {{ el.scrollTop = 0; }}
+          }});
+        }});
+        try {{ window.parent.scrollTo(0, 0); }} catch (e) {{}}
+      }}
+      goTop(); setTimeout(goTop, 80); setTimeout(goTop, 300); setTimeout(goTop, 700);
+    }})();
+    </script>"""
+    with st.sidebar:
+        components.html(script, height=0)
+
+
 def render_sidebar(scores_df):
     """วาด sidebar (โลโก้, เมนู navigation, dropdown เลือกหุ้น) แล้ว return (nav_page, selected_ticker)"""
-    st.sidebar.markdown("""
-    <div style="padding: 8px 0 14px 0;">
+    st.sidebar.markdown(f"""
+    <div style="padding: 4px 0 6px 0;">
         <div style="display: flex; align-items: flex-start; gap: 10px; min-width: 0;">
-            <div style="width: 26px; height: 26px; flex-shrink: 0; border-radius: 7px; background:#0F172A; display:flex; align-items:center; justify-content:center;">
+            <div style="width: 26px; height: 26px; flex-shrink: 0; border-radius: 7px; background:{INK}; display:flex; align-items:center; justify-content:center;">
                 <span style="font-size: 13px; font-weight:800; color:#FFFFFF;">CI</span>
             </div>
-            <span style="font-size: 15px; font-weight: 800; color: #0F172A; letter-spacing: -0.1px; line-height: 1.3; min-width: 0; word-break: break-word; overflow-wrap: break-word;">
+            <span style="font-size: 15px; font-weight: 800; color: {INK}; letter-spacing: -0.1px; line-height: 1.3; min-width: 0; word-break: break-word; overflow-wrap: break-word;">
                 Comprehensive Investment System
             </span>
         </div>
-        <div style="font-size: 12px; color: #94A3B8; margin-top: 4px; padding-left: 36px; letter-spacing: 0.3px; font-weight: 600;">
+        <div style="font-size: 12px; color: {FAINT}; margin-top: 4px; padding-left: 36px; letter-spacing: 0.3px; font-weight: 600;">
             Investment Decision Support
         </div>
     </div>
@@ -766,18 +781,15 @@ def render_sidebar(scores_df):
     # ต้องอัปเดตค่าให้ widget ตรงนี้ (ก่อน radio ถูกสร้าง) เพราะ Streamlit ไม่อนุญาตให้แก้ session_state
     # ของ key ที่ widget ใช้อยู่ หลังจาก widget ถูกสร้างไปแล้วในรอบเดียวกัน
     # *** ห้ามลบ/ย้ายกลไกนี้โดยไม่ปรึกษาทีมก่อน — เคยเป็นบั๊กที่ sidebar ไม่ sync กับปุ่มนำทางมาแล้ว ***
-    
     if "pending_nav" in st.session_state:
         st.session_state["nav_page"] = st.session_state.pop("pending_nav")
-
 
     # =========================
     # COMPANY SELECTOR
     # =========================
-
     st.sidebar.markdown(
-        "<div style='font-size:12px; font-weight:700; color:#64748B; "
-        "margin-bottom:6px; letter-spacing:0.5px;'>COMPANY</div>",
+        f"<div style='font-size:12px; font-weight:700; color:{MUTED}; "
+        "margin-bottom:4px; letter-spacing:0.5px;'>COMPANY</div>",
         unsafe_allow_html=True
     )
 
@@ -802,277 +814,86 @@ def render_sidebar(scores_df):
     selected_page = st.sidebar.radio(
         "Navigation",
         PAGES,
-        key="nav_page"
+        key="nav_page",
+        label_visibility="collapsed",
     )
 
-    nav_colors = PAGE_COLORS
-
-    active_color = nav_colors.get(selected_page, "#3B82F6")
+    active_color = PAGE_COLORS.get(selected_page, "#3B82F6")
 
     st.markdown(
         f"""
         <style>
-        [data-testid="stSidebar"]
-        [data-testid="stRadio"]
-        div[role="radiogroup"]
-        label:has(input:checked) {{
+        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {{
             background-color: {active_color}12 !important;
             border: 1px solid {active_color}30 !important;
             box-shadow: none !important;
         }}
-
-        [data-testid="stSidebar"]
-        [data-testid="stRadio"]
-        div[role="radiogroup"]
-        label:has(input:checked) p {{
+        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) p {{
             color: {active_color} !important;
             font-weight: 700 !important;
         }}
 
-      /* =========================================================
-         RESPONSIVE / MOBILE
-         ========================================================= */
-
+        /* =========================================================
+           RESPONSIVE / MOBILE (≤ 768px)
+           ========================================================= */
         @media (max-width: 768px) {{
-
-            /* ---------- Main content ---------- */
-            .main .block-container {{
-                width: 100% !important;
-                max-width: 100% !important;
-                box-sizing: border-box !important;
-                padding: 1rem 0.85rem 2rem 0.85rem !important;
+            [data-testid="stMainBlockContainer"], .stMainBlockContainer, .main .block-container {{
+                width: 100% !important; max-width: 100% !important; box-sizing: border-box !important;
+                padding: 2.6rem 0.8rem 1.5rem 0.8rem !important;
             }}
-
-            /* ---------- Prevent horizontal overflow ---------- */
-            html,
-            body,
-            .stApp {{
-                width: 100% !important;
-                max-width: 100vw !important;
-                overflow-x: hidden !important;
+            html, body, .stApp {{ width: 100% !important; max-width: 100vw !important; overflow-x: hidden !important; }}
+            [data-testid="stAppViewContainer"], [data-testid="stMain"] {{
+                width: 100% !important; max-width: 100% !important; overflow-x: hidden !important; box-sizing: border-box !important;
             }}
-
-            .main,
-            .main > div,
-            [data-testid="stAppViewContainer"],
-            [data-testid="stMain"] {{
-                width: 100% !important;
-                max-width: 100% !important;
-                overflow-x: hidden !important;
-                box-sizing: border-box !important;
+            /* แถวการ์ด (CSS Grid) → 1 คอลัมน์ */
+            .cis-grid {{ grid-template-columns: 1fr !important; }}
+            .cis-card {{ max-width: 100% !important; }}
+            /* คอลัมน์ Streamlit → เรียงลงมาทีละคอลัมน์ */
+            [data-testid="stHorizontalBlock"] {{ flex-wrap: wrap !important; gap: 0.75rem !important; }}
+            [data-testid="column"], [data-testid="stColumn"] {{
+                width: 100% !important; max-width: 100% !important; min-width: 0 !important;
+                flex: 1 1 100% !important; box-sizing: border-box !important;
             }}
-
-            /* ---------- HTML cards / markdown blocks ---------- */
-            .stMarkdown,
-            .stMarkdown > div {{
-                max-width: 100% !important;
-                box-sizing: border-box !important;
-            }}
-
-            .stMarkdown div {{
-                max-width: 100%;
-                box-sizing: border-box;
-            }}
-
-            /* ---------- Responsive HTML grids ---------- */
-            .stMarkdown [style*="grid-template-columns"] {{
-                width: 100% !important;
-                max-width: 100% !important;
-                grid-template-columns: 1fr !important;
-                box-sizing: border-box !important;
-            }}
-
-            .stMarkdown [style*="grid-template-columns"] > div {{
-                min-width: 0 !important;
-                max-width: 100% !important;
-                width: 100% !important;
-                box-sizing: border-box !important;
-            }}
-
-            /* ---------- Prevent inner flex overflow ---------- */
-            .stMarkdown [style*="display:flex"] {{
-                max-width: 100% !important;
-                box-sizing: border-box !important;
-                min-width: 0 !important;
-            }}
-
-            .stMarkdown [style*="display:flex"] > * {{
-                min-width: 0 !important;
-                max-width: 100% !important;
-                box-sizing: border-box !important;
-            }}
-
-            /* ---------- Streamlit columns ---------- */
-            [data-testid="stHorizontalBlock"] {{
-                width: 100% !important;
-                max-width: 100% !important;
-                flex-wrap: wrap !important;
-                gap: 0.75rem !important;
-                box-sizing: border-box !important;
-            }}
-
-            /* [FIX-UI9] Streamlit รุ่นใหม่ใช้ data-testid="stColumn" (เดิม "column") — ใส่ทั้งสองชื่อ
-               ไม่งั้นกฎจัดคอลัมน์บนมือถือไม่ทำงานเลย การ์ดจึงถูกบีบอยู่แถวเดียว */
-            [data-testid="column"],
-            [data-testid="stColumn"] {{
-                width: 100% !important;
-                max-width: 100% !important;
-                min-width: 0 !important;
-                flex: 1 1 100% !important;
-                box-sizing: border-box !important;
-            }}
-        
-            /* ---------- Shared Header ---------- */
-            .cis-header {{
-                flex-direction: column !important;
-                align-items: flex-start !important;
-                gap: 10px !important;
-                padding: 14px 16px !important;
-            }}
-  
-            .cis-header-info {{
-                width: 100% !important;
-                display: flex !important;
-                flex-wrap: wrap !important;
-                gap: 6px 10px !important;
-                font-size: 13px !important;
-            }}
-
-            .cis-header-divider {{
-                display: none !important;
-            }}
-
-            /* ---------- Titles ---------- */
-            .module-title {{
-                font-size: 21px !important;
-                line-height: 1.25 !important;
-            }}
-
-            .module-subtitle {{
-                font-size: 14px !important;
-                line-height: 1.5 !important;
-            }}
-
-            /* ---------- Tables ---------- */
-            [data-testid="stDataFrame"] {{
-                width: 100% !important;
-                max-width: 100% !important;
-                overflow-x: auto !important;
-                box-sizing: border-box !important;
-            }}
-
-            /* ---------- Plotly charts ---------- */
-            .js-plotly-plot,
-            .plot-container,
-            .plotly,
-            [data-testid="stPlotlyChart"] {{
-                width: 100% !important;
-                max-width: 100% !important;
-                box-sizing: border-box !important;
+            .cis-header {{ flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; padding: 12px 14px !important; }}
+            .cis-header-info {{ width: 100% !important; display: flex !important; flex-wrap: wrap !important; gap: 4px 10px !important; font-size: 13px !important; }}
+            .cis-header-divider {{ display: none !important; }}
+            .module-title {{ font-size: 19px !important; }}
+            .module-subtitle {{ font-size: 13px !important; }}
+            .cis-table-wrap {{ overflow-x: auto !important; }}
+            [data-testid="stDataFrame"], .js-plotly-plot, .plot-container, .plotly, [data-testid="stPlotlyChart"] {{
+                width: 100% !important; max-width: 100% !important; box-sizing: border-box !important;
             }}
         }}
 
-        /* =========================
-           iPad / Tablet
-           769px - 1024px
-           ========================= */
-        @media (min-width: 769px) and (max-width: 1024px) {{
-
-            .main .block-container {{
-                width: 100% !important;
-                max-width: 100% !important;
-                box-sizing: border-box !important;
-                padding: 1.5rem 1.5rem 2.5rem 1.5rem !important;
+        /* =========================================================
+           iPad / Tablet (769px - 1100px)
+           ========================================================= */
+        @media (min-width: 769px) and (max-width: 1100px) {{
+            [data-testid="stMainBlockContainer"], .stMainBlockContainer, .main .block-container {{
+                max-width: 100% !important; padding: 2.6rem 1.2rem 1.5rem 1.2rem !important;
             }}
-
-            [data-testid="stHorizontalBlock"] {{
-                width: 100% !important;
-                max-width: 100% !important;
-                gap: 1rem !important;
-                box-sizing: border-box !important;
-            }}
-
-            [data-testid="column"],
-            [data-testid="stColumn"] {{
-                min-width: 0 !important;
-                box-sizing: border-box !important;
-            }}
-
-            /* [FIX-UI9] แถวที่มีการ์ดตั้งแต่ 4 ใบขึ้นไป (เช่น การ์ด KPI 5 ใบ) ให้ขึ้นบรรทัดใหม่เป็นแถวละ 3 ใบ
-               แทนการบีบทุกใบให้แคบจนข้อความตกบรรทัด — แถว 2-3 คอลัมน์ยังอยู่บรรทัดเดียวตามเดิม */
+            /* แถวการ์ดตั้งแต่ 4 ใบขึ้นไป → แถวละ 2-3 ใบ แทนการบีบจนข้อความตกบรรทัด */
+            .cis-grid.wrap-md {{ grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important; }}
             [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(4)),
             [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(4)) {{
-                flex-wrap: wrap !important;
-                row-gap: 1rem !important;
+                flex-wrap: wrap !important; row-gap: 0.75rem !important;
             }}
             [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(4)) > [data-testid="stColumn"],
             [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(4)) > [data-testid="column"] {{
-                flex: 1 1 calc(33.333% - 1rem) !important;
-                min-width: 200px !important;
+                flex: 1 1 calc(50% - 0.75rem) !important; min-width: 220px !important;
             }}
-
-            .module-title {{
-                font-size: 24px !important;
-            }}
-
-            .stMarkdown,
-            .stMarkdown > div {{
-                max-width: 100% !important;
-                box-sizing: border-box !important;
-            }}
-
-            [data-testid="stDataFrame"] {{
-                max-width: 100% !important;
-                overflow-x: auto !important;
-                box-sizing: border-box !important;
-            }}
-
-            .js-plotly-plot,
-            .plot-container,
-            .plotly,
-            [data-testid="stPlotlyChart"] {{
-                width: 100% !important;
-                max-width: 100% !important;
-                box-sizing: border-box !important;
-            }}
+            .cis-table-wrap {{ overflow-x: auto !important; }}
         }}
-
-
-        /* =========================================================
-           VERY SMALL MOBILE
-           ========================================================= */
-
-        @media (max-width: 480px) {{
-
-            .main .block-container {{
-                padding: 0.75rem 0.65rem 1.5rem 0.65rem !important;
-            }}
-
-            .module-title {{
-                font-size: 19px !important;
-            }}
-
-            .module-subtitle {{
-                font-size: 13.5px !important;
-            }}
-
-            [data-testid="stHorizontalBlock"] {{
-                gap: 0.6rem !important;
-            }}
-        }}
-
         </style>
-         """,
-         unsafe_allow_html=True
-     )
+        """,
+        unsafe_allow_html=True
+    )
 
     nav_page = st.session_state["nav_page"]
-
 
     # =========================
     # DATA INFORMATION
     # =========================
-
     st.sidebar.caption(
         f"📅 ข้อมูล ณ วันที่ล่าสุดในชุดข้อมูล: **{scores_df['latest_date'].max()}**\n\n"
         f"(ราคาทั้งหมดอ้างอิงจากไฟล์ Dataset ไม่ใช่ราคาตลาดสด)"
@@ -1090,21 +911,20 @@ def render_header_bar(ctx):
     fy_txt = f"FY{int(fy)}" if not L.is_missing(fy) else "FY"
     roe = info.get('roe')
     roe_txt = NA if L.is_missing(roe) else f"{float(roe):.2f}%"
-    st.markdown(f"""
-    <div class="cis-header" style="display:flex; justify-content:space-between; align-items:center; background:#FFFFFF; padding:14px 24px; border-radius:12px; border:1px solid #E2E8F0; margin-bottom:20px;">
-        <div>
-            <span style="font-size:24px; font-weight:bold; color:#0F172A;">{ctx.selected_ticker}</span>
-            <span style="color:#64748B; font-size:15px; margin-left:8px;">{COMPANY_NAMES.get(ctx.selected_ticker, '')} · {info.get('sector','-')} (SET)</span>
+    div = f'<span class="cis-header-divider" style="margin:0 10px;color:#CBD5E1;">|</span>'
+    st.html(f"""
+    <div class="cis-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;background:#FFFFFF;
+         padding:10px 18px;border-radius:12px;border:1px solid {LINE};">
+        <div style="flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+            <span style="font-size:21px;font-weight:800;color:{INK};">{ctx.selected_ticker}</span>
+            <span style="color:{MUTED};font-size:13px;margin-left:8px;">{COMPANY_NAMES.get(ctx.selected_ticker, '').replace(' PCL', '')} · {info.get('sector','-')}</span>
         </div>
-        <div class="cis-header-info" style="font-size:16px; color:#64748B;">
-            ราคา: <b style="color:#0F172A; font-size:19px;">{ctx.current_price:.2f}</b> บาท
-            <span style="color:{ctx.change_color}; font-weight:bold; margin-left:6px;">({ctx.change_sign}{ctx.change_pct:.2f}%) {ctx.arrow_sign}</span>
-            <span class="cis-header-divider" style="margin: 0 12px; color:#CBD5E1;">|</span>
-            P/E ({fy_txt}): <b style="color:#0F172A;">{pe_txt}</b>
-            <span class="cis-header-divider" style="margin: 0 12px; color:#CBD5E1;">|</span>
-            ROE ({fy_txt}): <b style="color:#0F172A;">{roe_txt}</b>
-            <span class="cis-header-divider" style="margin: 0 12px; color:#CBD5E1;">|</span>
-            ข้อมูล ณ: <b style="color:#475569;">{info.get('latest_date','-')}</b>
+        <div class="cis-header-info" style="flex:0 0 auto;font-size:14px;color:{MUTED};white-space:nowrap;">
+            ราคา: <b style="color:{INK};font-size:17px;">{ctx.current_price:.2f}</b> บาท
+            <span style="color:{ctx.change_color};font-weight:700;margin-left:4px;">({ctx.change_sign}{ctx.change_pct:.2f}%) {ctx.arrow_sign}</span>
+            {div}P/E ({fy_txt}): <b style="color:{INK};">{pe_txt}</b>
+            {div}ROE ({fy_txt}): <b style="color:{INK};">{roe_txt}</b>
+            {div}ข้อมูล ณ: <b style="color:#475569;">{info.get('latest_date','-')}</b>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """)

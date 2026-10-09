@@ -30,7 +30,6 @@ from pages_content import (
 )
 
 
-
 # 1. ตั้งค่าหน้าเว็บ + CSS ธีมทั้งหมด (ต้องเรียกเป็นคำสั่งแรกสุดของแอป)
 common.setup_page_and_css()
 
@@ -51,6 +50,9 @@ except Exception as e:
 
 # 4. Sidebar (โลโก้ + เมนู + เลือกหุ้น) → ได้หน้าที่เลือกกับหุ้นที่เลือกกลับมา
 nav_page, selected_ticker = common.render_sidebar(scores_df)
+
+# 4.1 [v17.4] เปลี่ยนหน้าแล้วเลื่อนขึ้นบนสุดของหน้าใหม่อัตโนมัติ
+common.scroll_to_top_on_page_change(nav_page)
 
 # 5. ประกอบ PageContext ส่งต่อให้ทุกหน้าใช้ร่วมกัน
 ctx = common.build_context(

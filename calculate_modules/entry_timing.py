@@ -15,6 +15,15 @@ calculate_modules/entry_timing.py — v17 (Blueprint ฉบับที่ 2)
     ATR14 = ค่าเฉลี่ยแบบ Wilder ของ True Range 14 วัน
             (True Range = มากที่สุดของ High−Low, |High−ปิดวันก่อน|, |Low−ปิดวันก่อน|)
     Stop Loss = ราคา − 2 × ATR14  (ตัวคูณ 2 เป็นการตัดสินใจของผู้ออกแบบ ไม่มีแหล่งอ้างอิง)
+
+[v17.4] ข้อความสรุปสั้น (summary_short) ใช้กติกาเดียวกับ "ความพร้อม" และป้ายสัญญาณ
+    เดิมสรุปจากจำนวนข้อที่ผ่านอย่างเดียว ทำให้ ADVANC (คะแนน 73, พร้อม) ขึ้นว่า "รอการยืนยัน" และ
+    DELTA (คะแนน 47, NEUTRAL) ขึ้นว่า "ควรงดเข้าซื้อ" ซึ่งขัดกับป้ายในหน้าเดียวกัน ตอนนี้:
+        ราคา < MA200          → "ควรงดเข้าซื้อ · ราคาต่ำกว่า MA200"
+        คะแนน ≥ 70           → "พร้อมเข้าซื้อ" (+ บอกข้อที่ยังไม่ผ่าน ถ้ามี)
+        คะแนน 40-69          → "รอสัญญาณ · ยังไม่ผ่าน: ..."
+        คะแนน < 40           → "ควรงดเข้าซื้อ · แนวโน้มและแรงส่งอ่อน"
+    คะแนนและป้ายทุกตัวไม่เปลี่ยน
 """
 
 from __future__ import annotations
@@ -134,6 +143,21 @@ def _volume_check(df, cfg):
     return last, avg, last / avg
 
 
+def summary_text(total, veto, failing, cfg: TimingConfig = DEFAULT_CONFIG) -> str:
+    """[v17.4] ข้อความสรุปสั้นที่สอดคล้องกับ "ความพร้อม" และป้ายสัญญาณเสมอ
+    total   : คะแนน Entry Timing (0-100)
+    veto    : True ถ้าราคาต่ำกว่า MA200
+    failing : รายชื่อเกณฑ์ที่มีข้อมูลแต่ยังไม่ผ่าน (ชื่อสั้น)"""
+    pending = (" · ยังไม่ผ่าน: " + ", ".join(failing)) if failing else ""
+    if veto:
+        return "ควรงดเข้าซื้อ · ราคาต่ำกว่า MA200"
+    if total >= cfg.bullish_threshold:
+        return "พร้อมเข้าซื้อ · ผ่านครบทุกเกณฑ์" if not failing else "พร้อมเข้าซื้อ" + pending
+    if total >= cfg.neutral_threshold:
+        return "รอสัญญาณ" + pending
+    return "ควรงดเข้าซื้อ · แนวโน้มและแรงส่งอ่อน"
+
+
 def _empty(reason, missing=None) -> dict:
     out = {"timing_score": None, "trend_score": None, "mom_score": None, "data_status": "INSUFFICIENT_DATA",
            "data_status_reason": reason, "is_evaluated": 0, "missing_fields": json.dumps(missing or [], ensure_ascii=False),
@@ -192,12 +216,7 @@ def calculate_timing_module(df_price_ticker: Optional[pd.DataFrame], config: Opt
 
     passed = sum(ok.values())
     failing = [n.split(" (")[0] for (k, n, _) in CRITERIA if avail[k] and not ok[k]]
-    if passed >= 5:
-        summary = "สัญญาณพร้อมสูง"
-    elif len(failing) <= 2:
-        summary = "รอการยืนยันจาก " + ", ".join(failing)
-    else:
-        summary = "ควรงดเข้าซื้อ"
+    summary = summary_text(total, veto, failing, cfg)            # v17.4: ตามกติกาเดียวกับความพร้อม/ป้าย
 
     out = {
         "data_status": "OK", "data_status_reason": "", "is_evaluated": 1,

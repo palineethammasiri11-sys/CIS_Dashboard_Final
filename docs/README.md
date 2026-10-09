@@ -3,23 +3,28 @@
 Dashboard วิเคราะห์หุ้นกลุ่มเทคโนโลยีใน SET100 (8 หุ้น: ADVANC, CCET, DELTA, HANA, JMART, KCE, THCOM, TRUE)
 เพื่อสนับสนุนการตัดสินใจลงทุน สร้างด้วย Streamlit — ข้อมูลทั้งหมดในหน้าจอคำนวณจากไฟล์ Dataset จริง **ไม่มีค่าจำลอง/สุ่มหลงเหลืออยู่**
 
+> **v17.4 (10 ต.ค. 2569):** แก้ข้อความสรุปของ Entry Timing ให้ตรงกับ "ความพร้อม" + ปรับ UX/UI ทั้งแอป
+> (เลื่อนขึ้นบนสุดเมื่อเปลี่ยนหน้า, กระชับขึ้น, การ์ดสูงเท่ากัน, กราฟไม่ทับกัน) — ดู `docs/CHANGES_v17.md` หัวข้อ 5.5
+
 ## โครงสร้างไฟล์ (เวอร์ชันแยกโมดูล — พร้อมแบ่งงานทีม)
 
 ```
 cis-dashboard-main/
-├── .streamlit/config.toml       # ธีม dark navy
+├── .streamlit/config.toml       # ธีมสว่าง (base="light") — บังคับธีมเดียวกันทุกเครื่อง แม้เบราว์เซอร์ตั้งโหมดมืด
 ├── Dataset/                     # ไฟล์ CSV ต้นทางทั้ง 5 ไฟล์
 ├── import_data.py               # นำเข้า CSV -> SQLite (cis_database.db)
 ├── calculate_scores.py          # ★ Orchestrator — วนลูปหุ้น เรียกโมดูลคำนวณ บันทึกผลลง DB (ไม่มีสูตรอยู่ในนี้แล้ว)
 ├── calculate_modules/            # ★ สูตร/การคำนวณ 1 ไฟล์ต่อ 1 โมดูล — แบ่งงานทีมตรงนี้
 │   ├── common.py                 #   clean_float(), SECTOR_MAP ใช้ร่วมกันทุกโมดูล
+│   ├── labels.py                 #   ป้าย/สี/เกณฑ์ชุดเดียวทั้งระบบ
 │   ├── company_health.py
 │   ├── fair_value.py
 │   ├── entry_timing.py
 │   ├── ai_prediction.py
 │   ├── risk_analysis.py
 │   └── industry_benchmark.py     #   จัดอันดับ/รวมคะแนน (รอผลจาก 5 โมดูลอื่นก่อน)
-├── common.py                     # ★ CSS/ธีมกลาง, helper functions, การโหลดข้อมูล, PageContext, sidebar/header (ฝั่ง UI)
+├── common.py                     # ★ CSS/ธีมกลาง (Design tokens), helper functions, การโหลดข้อมูล, PageContext, sidebar/header (ฝั่ง UI)
+├── chart_notes.py                # คำอธิบาย "ⓘ วิธีอ่านกราฟและเทคนิค" ของทุกกราฟ
 ├── app.py                        # ★ Entry point — แค่ประกอบร่าง + routing ไม่มี logic หน้าจอ
 ├── pages_content/                 # ★ 1 ไฟล์ต่อ 1 โมดูล (ฝั่ง UI) — แบ่งงานทีมตรงนี้
 │   ├── overview.py
@@ -31,10 +36,8 @@ cis-dashboard-main/
 │   └── industry_benchmark.py
 ├── preview_my_page.py           # ★ ไฟล์ให้แต่ละคน preview หน้าตัวเองแบบเดี่ยว ไม่ต้องรอทีม
 ├── cis_database.db              # ฐานข้อมูลที่ประมวลผลไว้แล้ว (พร้อมใช้งานทันที)
-├── DATA_FORMULA_AUDIT.md        # เอกสารรวมสูตร/แหล่งข้อมูลทุกโมดูล (ใช้ตรวจสอบความถูกต้อง)
-├── EDGE_CASES.md                # ★ เคสขอบที่ควรระวัง/ทดสอบต่อโมดูล (มีเคสจริงที่เจอแล้ว เช่น EPS ติดลบ, sector เดี่ยว)
-├── GIT_WORKFLOW.md              # ★ วิธีใช้ Git ร่วมกัน 11 คน (branch, PR, ลำดับการ merge)
-├── TEAM_ROLES.md                # ★★ ไฟล์หลัก — บทบาทหน้าที่ทุกคนแบบละเอียด (อ่านไฟล์นี้ก่อนไฟล์อื่น)
+├── scripts/                     # สคริปต์ทดสอบ/วิเคราะห์เพิ่มเติม (รันจากโฟลเดอร์หลัก)
+├── docs/                        # เอกสารทีม (TEAM_ROLES, GIT_WORKFLOW, EDGE_CASES, CHANGES_v17 ฯลฯ)
 ├── run_tests.py                 # ★ รันตรวจสอบทั้งระบบด้วยคำสั่งเดียว (Data Contract + หน้าจอ + ปุ่ม + preview)
 └── requirements.txt
 ```
@@ -60,7 +63,8 @@ cis-dashboard-main/
 1. **เช็ค/ปรับสูตร** — แก้ที่ `calculate_modules/<โมดูลของตัวเอง>.py` เทียบกับ `DATA_FORMULA_AUDIT.md`
    ทุกไฟล์มี **Data Contract** เขียนไว้ที่หัวไฟล์ (input ต้องมีอะไร, output ต้อง return key อะไรบ้าง) — **ห้ามลบ/เปลี่ยนชื่อ key เดิม เพิ่มใหม่ได้อิสระ**
 2. **เช็คตัวเลข** — รัน `python calculate_scores.py` แล้วดู print สรุปท้ายผล หรือคำนวณด้วยมือจาก `Dataset/*.csv` เทียบกับที่ Dashboard โชว์ อย่างน้อย 2-3 หุ้น
-3. **จัด Layout** — แก้เฉพาะไฟล์ `pages_content/<โมดูลของตัวเอง>.py`
+3. **จัด Layout** — แก้เฉพาะไฟล์ `pages_content/<โมดูลของตัวเอง>.py` โดยใช้ helper กลางใน `common.py`
+   (`kpi()`, `card()`, `grid()`, `tile()`, `section_title()`, `style_fig()`, `show_chart()`) เพื่อให้ทุกหน้าหน้าตาเหมือนกัน
 
 **งานของคนที่ 1-6 ต้องผ่านการตรวจ 2 ทางก่อน merge** — Formula Auditor (คนที่ 8 หรือ 9 แล้วแต่กลุ่ม) ตรวจสูตร/ตัวเลข
 และ Layout Lead (คนที่ 10) ตรวจหน้าตา ทั้งสองต้อง Approve PR บน GitHub ก่อน คนที่ 11 ถึงจะ merge ได้
@@ -92,7 +96,7 @@ streamlit run preview_my_page.py
 - ห้ามแก้ `st.session_state["nav_page"]` / `"pending_nav"` logic ใน `common.py` (root) โดยไม่ปรึกษาทีม (เคยเป็นบั๊ก sidebar ไม่ sync มาก่อน)
 - ห้ามแก้ `calculate_modules/common.py` (SECTOR_MAP, clean_float) โดยไม่แจ้งทีม เพราะทุกโมดูลใช้ร่วมกัน
 - Industry Benchmark (`calculate_modules/industry_benchmark.py`) **ต้องรอ 5 โมดูลอื่นคำนวณเสร็จก่อน** เพราะจัดอันดับจากผลรวมทุกหุ้น — คนที่ดูแลโมดูลนี้ควรเริ่มจาก Layout ก่อน แล้วรอของจริงตอนรวมทีม
-- สี/emoji ต่อโมดูล (ห้ามชนกัน): 💚 Health `#10B981` | ⚖️ Fair Value `#F59E0B` | ⏱️ Timing `#38BDF8` | 🔮 AI `#A855F7` | 🛡️ Risk `#FB923C` | 📊 Industry `#2DD4BF`
+- สีประจำหน้า (เมนูด้านซ้าย): Industry `#06B6D4` | Overview `#3B82F6` | Health `#10B981` | Fair Value `#F59E0B` | Risk `#EF4444` | Timing `#6366F1` | AI `#A855F7`
 
 ## วิธีรันในเครื่อง (Local)
 
@@ -115,9 +119,9 @@ streamlit run app.py
 
 ## วิธี Deploy บน Streamlit Community Cloud
 
-1. อัปโหลดทั้งโฟลเดอร์นี้ขึ้น GitHub repository (รวมไฟล์ `cis_database.db` เพื่อให้แอปพร้อมใช้ทันทีโดยไม่ต้องรัน pipeline ตอน deploy)
+1. อัปโหลดทั้งโฟลเดอร์นี้ขึ้น GitHub repository (รวมไฟล์ `cis_database.db` และโฟลเดอร์ `.streamlit/` เพื่อให้แอปพร้อมใช้ทันทีโดยไม่ต้องรัน pipeline ตอน deploy)
 2. ไปที่ [share.streamlit.io](https://share.streamlit.io) → New app → เลือก repo นี้ → Main file path: `app.py`
-3. กด Deploy
+3. กด Deploy (ถ้าแอปเดิมเปิดอยู่แล้ว กด Reboot app ใน Manage app หลัง push)
 
 ถ้าต้องการให้ระบบประมวลผลข้อมูลใหม่ทุกครั้งที่ deploy แทนการแนบ `cis_database.db` ไปด้วย ให้เพิ่มคำสั่งใน `app.py` หรือใช้ GitHub Actions ให้รัน `import_data.py` และ `calculate_scores.py` ก่อน build — แต่โดยทั่วไปแนบไฟล์ `.db` ที่ประมวลผลไว้แล้วไปเลยจะเสถียรและเร็วกว่า
 

@@ -6,6 +6,11 @@ Blueprint ฉบับที่ 2 หัวข้อ 6.1 (I1-I7)
 - ป้าย/สีทุกช่องมาจาก calculate_modules/labels.py ชุดเดียวกับทุกหน้า
 - ตัดออกจากเวอร์ชันเดิม: ดาว, ป้าย LEADER/STRONG COMPETITOR ตามอันดับ, "Top x%", ตาราง Peer Comparison เฉพาะกลุ่ม,
   แกน Industry Score ในเรดาร์ (D6, D14)
+
+[v17.4] จัดหน้าใหม่ให้กระชับ (เลื่อนน้อยลง) และสมมาตร
+    แถว 1: ตารางจัดอันดับ 8 หุ้น | Strategic Matrix (วางคู่กัน สูงใกล้เคียงกัน)
+    แถว 2: แถบสรุปหุ้นที่เลือก + อันดับรายด้าน 6 ช่อง (CSS Grid สูงเท่ากัน)
+    แถว 3: Radar | จุดแข็ง-จุดอ่อน (สูงเท่ากัน)
 """
 
 import numpy as np
@@ -14,14 +19,18 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from calculate_modules import labels as L
-from common import (CARD, NA, badge, fmt_num, fmt_score, html, num, page_title, rank_text, render_nav_footer,
-                    section_title, show_chart)
+from common import (CARD, INK, MUTED, FAINT, LINE, NA, TOOLS_H, badge, card, fmt_num, grid, html, num, page_title,
+                    rank_text, render_nav_footer, section_title, show_chart, style_fig, tile)
 
 PAGE = " Industry Benchmark"
 DIMS = [  # (คอลัมน์คะแนน, ชื่อ)
     ("health_score", "Health"), ("valuation_score", "Fair Value"), ("risk_score", "Risk"),
     ("timing_score", "Entry Timing"), ("ai_score", "AI"),
 ]
+SECTOR_SHORT = {"Technology & Telecomm": "Tech & Telecom", "Electronic Components": "Electronics",
+                "Commerce & Technology": "Commerce & Tech"}
+TOP_ROW_H = 532     # ความสูงแถวบน (ตาราง | Matrix + แถบเครื่องมือ) ให้เท่ากัน
+RADAR_H = 330
 
 
 def _module_label(row, col):
@@ -41,61 +50,81 @@ def _chip(lab, score):
     s = NA if L.is_missing(score) else f"{float(score):.0f}"
     if lab["en"] == "NO EDGE":
         s = "NO EDGE"
-    return (f'<span title="{lab["th"]}" style="display:inline-block;min-width:54px;text-align:center;background:{lab["bg"]};'
-            f'color:{lab["color"]};border:1px solid {lab["color"]};border-radius:8px;padding:2px 6px;font-size:13px;'
-            f'font-weight:700;">{s}</span>')
+    return (f'<span title="{lab["th"]}" style="display:inline-block;min-width:46px;text-align:center;background:{lab["bg"]};'
+            f'color:{lab["color"]};border:1px solid {lab["color"]};border-radius:7px;padding:1px 5px;font-size:12px;'
+            f'font-weight:700;white-space:nowrap;">{s}</span>')
 
 
 def _ranking_table(df, selected):
     """I2: ตารางจัดอันดับทั้ง 8 หุ้น"""
     rows = ""
+    td = "padding:6px 5px;"
     for _, r in df.sort_values(["overall_rank", "ticker"]).iterrows():
         rec = L.overall_label(r.get("overall_score"))
         sel = r["ticker"] == selected
-        bg = "background:rgba(6,182,212,0.08);" if sel else ""
-        bold = "font-weight:800;" if sel else ""
-        chips = "".join(f'<td style="padding:8px 6px;text-align:center;">{_chip(_module_label(r, c), r.get(c))}</td>' for c, _ in DIMS)
+        bg = "background:rgba(6,182,212,0.09);" if sel else ""
+        bold = "font-weight:800;" if sel else "font-weight:600;"
+        chips = "".join(f'<td style="{td}text-align:center;">{_chip(_module_label(r, c), r.get(c))}</td>' for c, _ in DIMS)
         rank = NA if L.is_missing(r.get("overall_rank")) else int(r["overall_rank"])
+        sector = SECTOR_SHORT.get(r.get("sector"), r.get("sector", "-"))
         rows += f"""<tr style="border-top:1px solid #F1F5F9;{bg}">
-            <td style="padding:8px 6px;text-align:center;{bold}">{rank}</td>
-            <td style="padding:8px 6px;{bold}color:#0F172A;">{r['ticker']}{' ◀' if sel else ''}</td>
-            <td style="padding:8px 6px;color:#64748B;font-size:13px;">{r.get('sector', '-')}</td>
-            <td style="padding:8px 6px;text-align:center;font-weight:800;color:{rec['color']};">{fmt_num(r.get('overall_score'), 1)}</td>
-            <td style="padding:8px 6px;"><span style="color:{rec['color']};font-weight:700;font-size:13.5px;">{rec['th']}</span></td>
-            {chips}
-            <td style="padding:8px 6px;text-align:center;color:#475569;">{int(r.get('modules_used') or 0)}/4</td></tr>"""
-    head = "".join(f'<th style="padding:6px;text-align:center;">{n}</th>' for _, n in DIMS)
-    return f"""<div style="{CARD}overflow-x:auto;">{section_title('ตารางจัดอันดับทั้ง 8 หุ้น', 'เรียงตามคะแนนรวม · ตัวเลขในช่อง = คะแนน 0-100 ของโมดูล · คอลัมน์ AI แสดงประกอบ ไม่นับในคะแนนรวม')}
-        <table style="width:100%;border-collapse:collapse;font-size:14px;">
-        <tr style="color:#64748B;font-size:13px;"><th style="padding:6px;">อันดับ</th><th style="padding:6px;text-align:left;">หุ้น</th>
-        <th style="padding:6px;text-align:left;">กลุ่ม</th><th style="padding:6px;">คะแนนรวม</th><th style="padding:6px;text-align:left;">คำแนะนำ</th>
-        {head}<th style="padding:6px;">โมดูลที่นับ</th></tr>{rows}</table>
-        <div style="font-size:12.5px;color:#64748B;margin-top:8px;line-height:1.6;">
-        สีของช่องใช้เกณฑ์กลางของแต่ละโมดูล (Fair Value ใช้ Margin of Safety ±10%, Entry Timing ราคาต่ำกว่า MA200 = แดงเสมอ)
-        · AI ที่โมเดลสอบไม่ผ่าน = NO EDGE และไม่นับในคะแนนรวม</div></div>"""
+            <td style="{td}text-align:center;{bold}color:{INK};">{rank}</td>
+            <td style="{td}"><div style="{bold}color:{INK};line-height:1.2;">{r['ticker']}{' ◀' if sel else ''}</div>
+                <div style="font-size:11.5px;color:{FAINT};line-height:1.2;white-space:nowrap;">{sector}</div></td>
+            <td style="{td}text-align:center;font-weight:800;color:{rec['color']};">{fmt_num(r.get('overall_score'), 1)}</td>
+            <td style="{td}"><span style="color:{rec['color']};font-weight:700;font-size:12.5px;white-space:nowrap;">{rec['th']}</span></td>
+            {chips}</tr>"""
+    head = "".join(f'<th style="padding:4px 5px;text-align:center;font-weight:700;">{n}</th>' for _, n in DIMS)
+    inner = f"""{section_title('ตารางจัดอันดับทั้ง 8 หุ้น', 'เรียงตามคะแนนรวม · ตัวเลข = คะแนน 0-100 ของโมดูล')}
+        <div class="cis-table-wrap"><table style="width:100%;border-collapse:collapse;font-size:13.5px;">
+        <tr style="color:{MUTED};font-size:12px;"><th style="padding:4px 5px;font-weight:700;">อันดับ</th>
+        <th style="padding:4px 5px;text-align:left;font-weight:700;">หุ้น</th><th style="padding:4px 5px;font-weight:700;white-space:nowrap;">คะแนนรวม</th>
+        <th style="padding:4px 5px;text-align:left;font-weight:700;">คำแนะนำ</th>{head}</tr>{rows}</table></div>
+        <div style="font-size:12px;color:{MUTED};margin-top:8px;line-height:1.55;">
+        คะแนนรวม = Health 25 : Fair Value 25 : Entry Timing 15 : Risk 15 (ทุกหุ้นนับครบ 4 โมดูล) ·
+        สีช่องใช้เกณฑ์กลางของแต่ละโมดูล (Fair Value ใช้ Margin of Safety ±10%, Entry Timing ราคาต่ำกว่า MA200 = แดง) ·
+        AI แสดงประกอบ ไม่นับในคะแนนรวม (สอบไม่ผ่าน = NO EDGE)</div>"""
+    return card(inner, f"min-height:{TOP_ROW_H}px;")
+
+
+def _label_positions(d):
+    """วางชื่อหุ้นไม่ให้ทับกันเมื่อจุดอยู่ใกล้กัน: จุดแรกของกลุ่มใช้ป้ายด้านบน
+    จุดถัดไปที่อยู่ใกล้ (ห่างไม่เกิน 12 แนวนอน / 10 แนวตั้ง) เลือกตำแหน่งที่เพื่อนบ้านยังไม่ใช้ (ขวา → ซ้าย → ล่าง)"""
+    order = ["middle right", "middle left", "bottom center", "top center"]
+    pts = list(zip(d["ticker"], d["health_score"].astype(float), d["overall_score"].astype(float)))
+    pos = {}
+    for i, (t, x, y) in enumerate(pts):
+        near = [p[0] for p in pts[:i] if abs(p[1] - x) < 12 and abs(p[2] - y) < 10]
+        if not near:
+            pos[t] = "top center"
+            continue
+        used = {pos[n] for n in near}
+        pos[t] = next((o for o in order if o not in used), "bottom center")
+    return pos
 
 
 def _matrix(df, selected):
     """I3: Strategic Matrix (ตัดแกนที่ 50 ทั้งสองแกน — D17)"""
     fig = go.Figure()
-    d = df.dropna(subset=["health_score", "overall_score"])
+    d = df.dropna(subset=["health_score", "overall_score"]).sort_values("overall_score", ascending=False)
+    pos = _label_positions(d)
     for _, r in d.iterrows():
         sel = r["ticker"] == selected
         color = L.overall_label(r["overall_score"])["color"] if sel else "#94A3B8"
         fig.add_trace(go.Scatter(
             x=[r["health_score"]], y=[r["overall_score"]], mode="markers+text", text=[r["ticker"]],
-            textposition="top center", textfont=dict(size=13 if sel else 11.5, color="#0F172A" if sel else "#64748B"),
-            marker=dict(size=18 if sel else 12, color=color, line=dict(width=2 if sel else 0, color="#0F172A")),
-            showlegend=False,
+            textposition=pos[r["ticker"]], textfont=dict(size=12.5 if sel else 11, color=INK if sel else MUTED),
+            marker=dict(size=16 if sel else 10, color=color, line=dict(width=2 if sel else 0, color=INK)),
+            showlegend=False, cliponaxis=False,
             hovertemplate=f"{r['ticker']}<br>Health %{{x:.1f}}<br>คะแนนรวม %{{y:.1f}}<extra></extra>"))
-    for txt, x, y in [("Market Leader", 97, 97), ("Hidden Gem", 3, 97), ("Competitive", 97, 3), ("Value Trap", 3, 3)]:
-        fig.add_annotation(x=x, y=y, text=txt, showarrow=False, font=dict(size=12, color="#94A3B8"),
+    for txt, x, y in [("Market Leader", 98, 98), ("Hidden Gem", 2, 98), ("Competitive", 98, 2), ("Value Trap", 2, 2)]:
+        fig.add_annotation(x=x, y=y, text=txt, showarrow=False, font=dict(size=11.5, color="#94A3B8"),
                            xanchor="right" if x > 50 else "left", yanchor="top" if y > 50 else "bottom")
-    fig.add_vline(x=50, line_dash="dash", line_color="#CBD5E1")
-    fig.add_hline(y=50, line_dash="dash", line_color="#CBD5E1")
-    fig.update_layout(height=380, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
-                      xaxis=dict(title="Health Score (คุณภาพธุรกิจ)", range=[0, 100], gridcolor="#F1F5F9"),
-                      yaxis=dict(title="คะแนนรวม (ความน่าลงทุน)", range=[0, 100], gridcolor="#F1F5F9"))
+    fig.add_vline(x=50, line_dash="dash", line_color="#CBD5E1", layer="below")
+    fig.add_hline(y=50, line_dash="dash", line_color="#CBD5E1", layer="below")
+    style_fig(fig, height=TOP_ROW_H - TOOLS_H, title="STRATEGIC MATRIX", sub="บริษัทดี ≠ หุ้นน่าซื้อ · เส้นแบ่งที่ 50")
+    fig.update_layout(xaxis=dict(title="Health Score (คุณภาพธุรกิจ)", range=[0, 100]),
+                      yaxis=dict(title="คะแนนรวม", range=[0, 100]))
     return fig
 
 
@@ -111,13 +140,14 @@ def render(ctx):
     info, df = ctx.stock_info, ctx.scores_df.copy()
     page_title("INDUSTRY BENCHMARK", "ภาพรวมทั้ง 8 หุ้นที่ติดตาม และตำแหน่งของหุ้นที่เลือกเมื่อเทียบกับเพื่อน")
 
-    # ---------------- ส่วนบน: ทั้ง 8 หุ้น ----------------
-    html(_ranking_table(df, ctx.selected_ticker))
-    html('<div style="margin-top:18px;"></div>' + section_title("STRATEGIC MATRIX", "แยก “บริษัทดี” ออกจาก “หุ้นน่าซื้อ” · เส้นแบ่งที่ 50 = เส้นทยอยซื้อของคำแนะนำ"))
-    show_chart(_matrix(df, ctx.selected_ticker), key="industry_matrix")
+    # ---------------- แถว 1: ทั้ง 8 หุ้น ----------------
+    c1, c2 = st.columns([1.6, 1])
+    with c1:
+        html(_ranking_table(df, ctx.selected_ticker))
+    with c2:
+        show_chart(_matrix(df, ctx.selected_ticker), key="industry_matrix", compact_tools=True)
 
-    # ---------------- ส่วนล่าง: หุ้นที่เลือก ----------------
-    html(f'<div style="font-size:18px;font-weight:800;color:#0F172A;margin:22px 0 10px 0;">หุ้นที่เลือก: {ctx.selected_ticker}</div>')
+    # ---------------- แถว 2: หุ้นที่เลือก (แถบสรุป + อันดับรายด้าน) ----------------
     n_all = len(df)
     overall = num(info.get("overall_score"))
     rank = info.get("overall_rank")
@@ -125,40 +155,37 @@ def render(ctx):
     med = pd.to_numeric(df["overall_score"], errors="coerce").median()
     sector_n = int(info.get("sector_n") or 1)
     sector_txt = (f"อันดับ {int(info['sector_rank'])} จาก {sector_n} ในกลุ่ม {info.get('sector')}" if sector_n > 1
-                  else f"กลุ่ม {info.get('sector')} ยังไม่มีหุ้นอื่นในชุดข้อมูล จึงไม่เทียบในกลุ่ม")
+                  else f"กลุ่ม {info.get('sector')} ยังไม่มีหุ้นอื่นในชุดข้อมูล")
     rec = L.overall_label(overall)
     gap_top = NA if overall is None else f"{overall - top:+.1f}"
     gap_med = NA if overall is None else f"{overall - med:+.1f}"
 
-    c1, c2 = st.columns([1, 2.2])
-    with c1:   # I4
-        html(f"""<div style="{CARD}border:1.5px solid {rec['color']};height:100%;">
-            {section_title('อันดับของหุ้นที่เลือก')}
-            <div style="font-size:30px;font-weight:800;color:#0F172A;">อันดับ {NA if L.is_missing(rank) else int(rank)} <span style="font-size:17px;color:#64748B;">จาก {n_all}</span></div>
-            <div style="font-size:14.5px;color:#475569;margin-top:4px;">{sector_txt}</div>
-            <div style="margin-top:12px;font-size:14.5px;line-height:1.9;color:#334155;">
-              คะแนนรวม <b style="color:{rec['color']};">{fmt_num(overall, 1)}</b> · {badge(rec, 12)}<br>
-              ห่างจากอันดับ 1: <b>{gap_top}</b> คะแนน<br>
-              ห่างจากค่ากลางของ 8 หุ้น ({med:.1f}): <b>{gap_med}</b> คะแนน</div></div>""")
-    with c2:   # I5
-        cards = ""
-        for col, name in DIMS + [("revenue_growth_yoy", "การเติบโตของรายได้")]:
-            v = info.get(col)
-            if col == "ai_score" and L.is_missing(v):
-                main, sub = "N/A (NO EDGE)", "โมเดลสอบไม่ผ่าน ไม่จัดอันดับ"
-            else:
-                main = rank_text(info, col, with_sector=False)
-                sub = (f"ในกลุ่ม {int(info['srank_' + col])}/{sector_n}" if sector_n > 1 and not L.is_missing(info.get('srank_' + col))
-                       else "กลุ่มนี้มีหุ้นเดียว")
-            val = fmt_num(v, 1, "%" if col == "revenue_growth_yoy" else "", sign=(col == "revenue_growth_yoy"))
-            cards += f"""<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:10px 12px;">
-                <div style="font-size:13px;color:#64748B;font-weight:700;">{name}</div>
-                <div style="font-size:16px;font-weight:800;color:#0F172A;margin-top:2px;">{main.replace('อันดับ ', '')}</div>
-                <div style="font-size:12.5px;color:#64748B;">ค่า {val} · {sub}</div></div>"""
-        html(f"""<div style="{CARD}height:100%;">{section_title('อันดับรายด้าน', 'อันดับ 1 = ดีที่สุดในด้านนั้น (Risk: ปลอดภัยที่สุด)')}
-            <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;">{cards}</div></div>""")
+    summary = card(f"""
+        <div style="font-size:12.5px;font-weight:700;color:{MUTED};">หุ้นที่เลือก</div>
+        <div style="font-size:24px;font-weight:800;color:{INK};line-height:1.25;margin-top:2px;">{ctx.selected_ticker}
+          <span style="font-size:15px;color:{MUTED};font-weight:700;">อันดับ {NA if L.is_missing(rank) else int(rank)} จาก {n_all}</span></div>
+        <div style="margin-top:6px;">{badge(rec, 12)}</div>
+        <div style="font-size:13px;color:#475569;line-height:1.7;margin-top:6px;">
+          คะแนนรวม <b style="color:{rec['color']};">{fmt_num(overall, 1)}</b> · ห่างอันดับ 1 <b>{gap_top}</b><br>
+          ห่างค่ากลาง 8 หุ้น ({med:.1f}) <b>{gap_med}</b><br>{sector_txt}</div>""",
+        f"border:1.5px solid {rec['color']};")
 
-    # I6 + I7 — เทียบเฉพาะคู่แข่งในกลุ่มเดียวกัน · กลุ่มที่ยังไม่มีหุ้นอื่น → แสดงเฉพาะหุ้นนี้ ไม่เทียบ
+    tiles = []
+    for col, name in DIMS + [("revenue_growth_yoy", "การเติบโตของรายได้")]:
+        v = info.get(col)
+        if col == "ai_score" and L.is_missing(v):
+            main, sub = "N/A (NO EDGE)", "โมเดลสอบไม่ผ่าน ไม่จัดอันดับ"
+        else:
+            main = rank_text(info, col, with_sector=False).replace("อันดับ ", "")
+            sub = (f"ในกลุ่ม {int(info['srank_' + col])}/{sector_n}" if sector_n > 1 and not L.is_missing(info.get('srank_' + col))
+                   else "กลุ่มนี้มีหุ้นเดียว")
+        val = fmt_num(v, 1, "%" if col == "revenue_growth_yoy" else "", sign=(col == "revenue_growth_yoy"))
+        tiles.append(tile(name, main, f"ค่า {val} · {sub}", size=16))
+    ranks = card(section_title("อันดับรายด้านของหุ้นที่เลือก", "อันดับ 1 = ดีที่สุดในด้านนั้น (Risk: ปลอดภัยที่สุด)")
+                 + grid(tiles, cols=3, style="gap:8px;"))
+    html(grid([summary, ranks], template="minmax(250px,1fr) minmax(0,2.6fr)"))
+
+    # ---------------- แถว 3: Radar | จุดแข็ง-จุดอ่อน ----------------
     has_peers = sector_n > 1
     axes, mine, peers = [], [], []
     for col, name in DIMS:
@@ -171,7 +198,7 @@ def render(ctx):
         peers.append(pv)
     no_peer_msg = (f"กลุ่ม {info.get('sector')} ยังไม่มีหุ้นอื่นในชุดข้อมูลนี้ จึงไม่แสดงเส้นเปรียบเทียบ "
                    f"(เมื่อเพิ่มหุ้นในกลุ่มเดียวกัน ระบบจะเทียบให้อัตโนมัติ)")
-    c3, c4 = st.columns([1.3, 1])
+    c3, c4 = st.columns([1, 1])
     with c3:
         if len(axes) >= 3:
             fig = go.Figure()
@@ -180,22 +207,23 @@ def render(ctx):
                                               line=dict(color="#64748B", dash="dash"), fill=None))
             fig.add_trace(go.Scatterpolar(r=mine + mine[:1], theta=axes + axes[:1], name=ctx.selected_ticker,
                                           line=dict(color="#06B6D4", width=2), fill="toself", fillcolor="rgba(6,182,212,0.18)"))
-            fig.update_layout(height=380, margin=dict(l=40, r=40, t=30, b=30), paper_bgcolor="#FFFFFF",
-                              polar=dict(radialaxis=dict(range=[0, 100], tickfont=dict(size=11))),
-                              legend=dict(orientation="h", y=-0.08), showlegend=True)
-            if has_peers:
-                html(section_title("RADAR: หุ้นที่เลือก เทียบค่าเฉลี่ยคู่แข่ง", "คู่แข่งในกลุ่ม (ไม่รวมตัวเอง)"))
-            else:
-                html(section_title("RADAR: คะแนน 5 ด้านของหุ้นที่เลือก", "ไม่มีคู่แข่งในกลุ่ม"))
+            style_fig(fig, height=RADAR_H,
+                      title="RADAR" + (": เทียบค่าเฉลี่ยคู่แข่งในกลุ่ม" if has_peers else ": คะแนน 5 ด้าน"),
+                      sub="ไม่รวมตัวเอง" if has_peers else "ไม่มีคู่แข่งในกลุ่ม", margin=dict(l=60, r=60, t=58, b=40))
+            # legend ไว้ใต้กราฟ (เดิมอยู่บนแล้วทับชื่อแกน Fair Value) · ตัวเลขแกนรัศมีวางทแยง 45° ไม่ทับแกนใด
+            fig.update_layout(showlegend=True,
+                              legend=dict(orientation="h", yanchor="top", y=-0.04, xanchor="center", x=0.5, font=dict(size=11.5)),
+                              polar=dict(radialaxis=dict(range=[0, 100], angle=45, tickangle=45, tickvals=[25, 50, 75, 100],
+                                                         tickfont=dict(size=10, color=FAINT)),
+                                         angularaxis=dict(tickfont=dict(size=12.5, color=INK))))
             show_chart(fig, key="industry_radar")
-            if not has_peers:
-                html(f'<div style="font-size:13px;color:#64748B;margin-top:-4px;">{no_peer_msg}</div>')
         else:
-            html(f'<div style="{CARD}">' + section_title("RADAR") + 'ข้อมูลไม่พอวาดเรดาร์</div>')
+            html(card(section_title("RADAR") + "ข้อมูลไม่พอวาดเรดาร์", f"min-height:{RADAR_H}px;"))
     with c4:
         items = ""
         dropped = [n for _, n in DIMS if n not in axes]
-        drop_txt = f'<div style="font-size:12.5px;color:#94A3B8;margin-top:6px;">ไม่แสดง: {", ".join(dropped)} (ไม่มีคะแนน)</div>' if dropped else ""
+        drop_txt = (f'<div style="font-size:12px;color:{FAINT};margin-top:6px;">ไม่แสดง: {", ".join(dropped)} '
+                    f'(ไม่มีคะแนน)</div>') if dropped else ""
         if has_peers:
             better = 0
             for name, v, pv in zip(axes, mine, peers):
@@ -203,19 +231,20 @@ def render(ctx):
                 better += ok
                 icon, colr = ("✓", L.GREEN) if ok else ("✗", L.RED)
                 note = " (ปลอดภัยกว่า)" if name == "Risk" and ok else (" (เสี่ยงกว่า)" if name == "Risk" else "")
-                items += (f'<div style="padding:6px 0;border-bottom:1px solid #F1F5F9;font-size:14.5px;">'
-                          f'<b style="color:{colr};">{icon}</b> <b>{name}</b>{note}<br>'
-                          f'<span style="color:#64748B;font-size:13.5px;">หุ้นนี้ {v:.1f} · ค่าเฉลี่ยคู่แข่ง {pv:.1f}</span></div>')
-            head = (f"{ctx.selected_ticker} อยู่อันดับ {NA if L.is_missing(rank) else int(rank)} จาก {n_all} "
-                    f"และดีกว่าค่าเฉลี่ยคู่แข่งในกลุ่ม {better} จาก {len(axes)} ด้าน")
+                items += (f'<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;'
+                          f'border-bottom:1px solid #F1F5F9;font-size:13.5px;">'
+                          f'<span><b style="color:{colr};">{icon}</b> <b>{name}</b>{note}</span>'
+                          f'<span style="color:{MUTED};white-space:nowrap;">หุ้นนี้ {v:.1f} · คู่แข่ง {pv:.1f}</span></div>')
+            head = (f"{ctx.selected_ticker} ดีกว่าค่าเฉลี่ยคู่แข่งในกลุ่ม <b>{better} จาก {len(axes)}</b> ด้าน")
         else:
             for name, v in zip(axes, mine):
-                items += (f'<div style="padding:6px 0;border-bottom:1px solid #F1F5F9;font-size:14.5px;">'
-                          f'<b>{name}</b> <span style="color:#64748B;font-size:13.5px;">· คะแนน {v:.1f}</span></div>')
-            head = (f"{ctx.selected_ticker} อยู่อันดับ {NA if L.is_missing(rank) else int(rank)} จาก {n_all} · "
-                    f"<b>ไม่มีคู่แข่งในกลุ่ม</b> จึงไม่สรุปจุดแข็ง-จุดอ่อน (ดูอันดับเทียบทั้ง {n_all} หุ้นได้ที่การ์ดอันดับรายด้าน)")
-        html(f"""<div style="{CARD}">{section_title('จุดแข็ง-จุดอ่อนเทียบคู่แข่ง')}
-            <div style="font-size:15px;color:#0F172A;margin-bottom:8px;line-height:1.6;">{head}</div>
-            {items}{drop_txt}</div>""")
+                items += (f'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #F1F5F9;'
+                          f'font-size:13.5px;"><b>{name}</b><span style="color:{MUTED};">คะแนน {v:.1f}</span></div>')
+            head = (f"{ctx.selected_ticker} <b>ไม่มีคู่แข่งในกลุ่ม</b> จึงไม่สรุปจุดแข็ง-จุดอ่อน "
+                    f"(ดูอันดับเทียบทั้ง {n_all} หุ้นได้ที่การ์ดอันดับรายด้านด้านบน)")
+        extra = f'<div style="font-size:12.5px;color:{MUTED};margin-top:8px;line-height:1.55;">{no_peer_msg}</div>' if not has_peers else ""
+        html(card(f"""{section_title('จุดแข็ง-จุดอ่อนเทียบคู่แข่ง')}
+            <div style="font-size:14px;color:{INK};margin-bottom:6px;line-height:1.6;">{head}</div>
+            {items}{drop_txt}{extra}""", f"min-height:{RADAR_H + TOOLS_H}px;"))
 
     render_nav_footer(ctx, PAGE)

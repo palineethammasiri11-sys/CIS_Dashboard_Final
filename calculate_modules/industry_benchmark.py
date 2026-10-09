@@ -65,7 +65,7 @@ def _weighted_mean(df, weights):      # ข้อ 2
     num = (vals.fillna(0) * w).sum(axis=1)
     den = (mask * w).sum(axis=1)
     return (num / den.where(den > 0)).round(1)
-    
+
 def compute_industry_rankings(df_res):
     """รับ DataFrame ที่มีคะแนนทุกโมดูลของทุกหุ้นแล้ว (แถวละ 1 หุ้น) คำนวณ Industry Benchmark
     + Overall Score + Recommendation แล้วคืน DataFrame เดิมที่เพิ่มคอลัมน์เหล่านี้เข้าไป"""
