@@ -81,7 +81,7 @@ def _ranking_table(df, selected):
         <th style="padding:4px 5px;text-align:left;font-weight:700;">หุ้น</th><th style="padding:4px 5px;font-weight:700;white-space:nowrap;">คะแนนรวม</th>
         <th style="padding:4px 5px;text-align:left;font-weight:700;">คำแนะนำ</th>{head}</tr>{rows}</table></div>
         <div style="font-size:12px;color:{MUTED};margin-top:8px;line-height:1.55;">
-        คะแนนรวม = Health 25 : Fair Value 25 : Entry Timing 15 : Risk 15 (ทุกหุ้นนับครบ 4 โมดูล) ·
+        คะแนนรวม = Health 31.25% + Fair Value 31.25% + Entry Timing 18.75% + Risk 18.75% (ทุกหุ้นนับครบ 4 โมดูล) ·
         สีช่องใช้เกณฑ์กลางของแต่ละโมดูล (Fair Value ใช้ Margin of Safety ±10%, Entry Timing ราคาต่ำกว่า MA200 = แดง) ·
         AI แสดงประกอบ ไม่นับในคะแนนรวม (สอบไม่ผ่าน = NO EDGE)</div>"""
     return card(inner, f"min-height:{TOP_ROW_H}px;")

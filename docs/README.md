@@ -129,12 +129,12 @@ streamlit run app.py
 
 | โมดูล | แหล่งข้อมูล | วิธีคำนวณ (ย่อ) |
 |---|---|---|
-| Company Health | `stock_financials` (ROE / ROA ค่าในไฟล์, D/E, Current Ratio) | ROE × 3.5 (30%) + ROA × 7 (25%) + Current Ratio × 45 (20%) + (2.5 − D/E) × 40 (25%) ตัดที่ 0-100, ต้องมี 3 ใน 4 |
+| Company Health | `stock_financials` (ROE / ROA ค่าในไฟล์, D/E, Current Ratio) | ROE × 3.5 (30%) + ROA × 7 (25%) + Current Ratio × 45 (20%) + (2.5 − D/E) × 40 (25%) ตัดที่ 0-100, ต้องมีครบ 4 องค์ประกอบ (v17.4) |
 | Fair Value | `stock_financials` + `valuation_params` (Damodaran ม.ค. 2024-2026 รายปี) | DCF (FCF เฉลี่ย 2 ปี, WACC รายอุตสาหกรรม, g 2%) 55% + EPS × Target P/E 45%; คะแนนแต่ละวิธี = 50 + Margin of Safety |
 | Risk Analysis | ราคา 3 ปีล่าสุด + Beta เทียบ TDEX | 100 − ค่าเฉลี่ยถ่วงน้ำหนักของ CVaR × 10 (30%), Max DD × 1.5 + โทษฟื้นช้า (25%), Volatility × 1.3 (20%), Beta × 40 (15%), 100 − PSR (10%) |
 | Entry Timing | `stock_daily_prices` | แนวโน้ม 60 (ราคา > EMA20, EMA20 > EMA50, ราคา > MA200) + แรงส่ง 40 (MACD > 0, ADX ≥ 25, Volume ≥ เฉลี่ย 20 วัน); ราคา < MA200 = BEARISH |
 | AI Prediction | `stock_daily_prices` (11 ตัวชี้วัดแบบสัดส่วน) | Random Forest ฝึกก่อน 2025 ทดสอบปี 2025 ทำนาย 10 วัน; ต้องชนะการเดาและ ROC-AUC > 0.5; AI Score = โอกาสขึ้น |
-| Industry Benchmark | ผลของ 4 โมดูล (AI แสดงประกอบ ไม่นับ) | คะแนนรวม = ค่าเฉลี่ยถ่วงน้ำหนัก Health 25 : Fair Value 25 : Timing 15 : Risk 15 (= 31.25/31.25/18.75/18.75%) หารด้วยผลรวมน้ำหนักของโมดูลที่มีคะแนน; ≥ 75 ซื้อแรง · ≥ 65 ซื้อ · ≥ 50 ทยอยซื้อ · < 50 ลดสัดส่วน/ขาย |
+| Industry Benchmark | ผลของ 4 โมดูล (AI แสดงประกอบ ไม่นับ) | คะแนนรวม = ค่าเฉลี่ยถ่วงน้ำหนัก Health 31.25% + Fair Value 31.25% + Timing 18.75% + Risk 18.75% (มาจาก 25 : 25 : 15 : 15 ÷ 80) หารด้วยผลรวมน้ำหนักของโมดูลที่มีคะแนน; ≥ 75 ซื้อแรง · ≥ 65 ซื้อ · ≥ 50 ทยอยซื้อ · < 50 ลดสัดส่วน/ขาย |
 
 ป้ายและสีของทุกโมดูลอยู่ใน `calculate_modules/labels.py` ไฟล์เดียว ทุกหน้าใช้ชุดเดียวกัน
 รายละเอียดการเปลี่ยนแปลงรอบนี้ดูที่ `docs/CHANGES_v17.md`
